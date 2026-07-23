@@ -1,28 +1,25 @@
 # Project status — 23 July 2026
 
-## Verified current source
+> Supersedes the pre-merge status (72-panel prototype). The approved baseline is the
+> 110-panel handoff at `design/handoff-current/`, tag `design-handoff-v1.0.0`.
 
-- Brand: Mazidi Performance / Mazidi Assistant
-- Current prototype: 72 panels
-- Completed design batches: core coach/client product, exercise-library corrections, invitation/onboarding, coach notification inbox, representative video playback and full-screen player
-- Current exercise source metadata: 206 records
-- Current poster fixtures: 412 files
-- Current video fixtures: 12 MP4 files
+## Design
 
-## Next design batches
+- Turns 1–14 complete and approved for development, including commercial (10), subscription (11), calendar (12), privacy/account (13) and light-mode/accessibility (14) batches.
+- Two known Design-Canvas false positives (Turn 7b sticky-footer findings) — not blockers.
 
-1. Packages and client payments (10a–10f)
-2. Coach Mazidi subscription plans and entitlement states
-3. Full calendar and scheduling states
-4. Privacy and account settings
-5. Light-mode and accessibility pass
+## Implementation
 
-## Remaining content/asset work
+- Phase 1 foundation started on branch `feature/foundation-and-workout-slice`:
+  - `Packages/MazidiKit` — domain core (workout session state machine, one-device rule, type-aware prescriptions, rest timer), offline operation queue + sync engine (idempotency, ordered replay, crash recovery), persistence contracts + in-memory reference store, audit-event foundation, proposed networking contracts.
+  - App scaffold: XcodeGen manifest, role shells, design tokens.
+  - Test suites: 25 domain/sync/service tests **written; not yet executed** — see `BUILD_AND_TEST.md` (Windows host: Norton 360 removes Swift toolchain stubs; definitive run needs macOS/Linux or an AV exclusion by the machine owner).
+- No backend exists (R-01): all networking is contract-first; nothing fabricated.
 
-- Editorially review the generated client-facing exercise content.
-- Ingest the full animation library into the developer/content pipeline.
-- Validate mapping coverage between stable exercise slugs, poster files and production video objects.
+## Open review items
 
-## Handoff guidance
+1. Fitness-professional review of client-content draft (101/206 flagged; all draft).
+2. Legal/privacy review of retention and deletion wording (13g/13i/13j).
+3. Full animation-library ingestion via content pipeline.
 
-Core product areas can be developed in phases now. Commercial, subscription, calendar and privacy/account areas should not be treated as fully specified until their remaining batches are completed.
+See `RISK_REGISTER.md` and `DECISION_LOG.md` for the full lists.
