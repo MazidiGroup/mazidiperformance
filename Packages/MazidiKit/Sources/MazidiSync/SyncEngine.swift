@@ -23,13 +23,13 @@ public enum SyncStatus: Sendable, Equatable {
 /// re-run at any time (idempotency keys make retries harmless), never drops an
 /// operation silently (ADR-0003).
 public actor SyncEngine {
-    private let store: any SyncOperationStore
+    private let store: SyncOutboxStore
     private let transport: any SyncTransport
     private let log: AppLog
 
     public private(set) var status: SyncStatus = .idle
 
-    public init(store: any SyncOperationStore, transport: any SyncTransport, log: AppLog = AppLog(category: "sync")) {
+    public init(store: SyncOutboxStore, transport: any SyncTransport, log: AppLog = AppLog(category: "sync")) {
         self.store = store
         self.transport = transport
         self.log = log

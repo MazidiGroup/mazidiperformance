@@ -1,5 +1,6 @@
 import Foundation
 import MazidiFoundations
+import MazidiPersistence
 
 /// A durable, replayable mutation record (ADR-0003). Enqueued in the same local transaction
 /// as the optimistic state change it describes; replayed in per-aggregate order; applied
@@ -78,6 +79,20 @@ public struct SyncOperation: Sendable, Codable, Equatable, Identifiable {
         lastError = reason
     }
 }
+
+/// The persistence layer stores outbox records generically (`OutboxOperation`); this is
+/// the sync layer supplying its concrete record type. `awaitingReplay` covers in-flight
+/// ops too: after a crash, ambiguous sends are safe to replay (idempotency keys).
+extension SyncOperation: OutboxOperation {
+    public var awaitingReplay: Bool { status == .pending || status == .inFlight }
+}
+
+/// Concrete composition boundary: the outbox store as the sync and service layers use it.
+public typealias SyncOutboxStore = any SyncOperationStore<SyncOperation>
+
+/// The in-memory reference store specialised to the concrete operation type — what tests
+/// and non-Apple hosts construct.
+public typealias InMemorySyncStore = InMemoryStore<SyncOperation>
 
 /// Outcome classification for a transport attempt.
 public enum SyncAttemptOutcome: Sendable, Equatable {

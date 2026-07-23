@@ -14,14 +14,30 @@ public protocol WorkoutSessionRepository: Sendable {
     func allSessions() async throws -> [WorkoutSession]
 }
 
-public protocol SyncOperationStore: Sendable {
+/// The persistence-facing shape of an outbox record. Deliberately minimal so this layer
+/// stays free of sync/transport vocabulary: the store needs identity, aggregate ordering,
+/// and whether the record still awaits successful replay — nothing about how replay works.
+/// The concrete operation type (with its status machine and retry semantics) lives in
+/// MazidiSync, which depends on this package, not the other way round.
+public protocol OutboxOperation: Sendable, Codable, Identifiable where ID: Hashable & Sendable {
+    /// Aggregate identity — replay is strictly ordered within one aggregate.
+    var aggregateID: UUID { get }
+    /// Monotonic sequence within the aggregate, assigned at enqueue.
+    var sequence: Int { get }
+    /// True while the record must still be replayed (pending, or ambiguously in flight).
+    var awaitingReplay: Bool { get }
+}
+
+public protocol SyncOperationStore<Operation>: Sendable {
+    associatedtype Operation: OutboxOperation
+
     /// Atomically persist a session snapshot and enqueue operations — the crash-safety
     /// invariant of ADR-0003: either both are stored or neither is.
-    func saveAtomically(session: WorkoutSession, enqueueing operations: [SyncOperation]) async throws
-    func enqueue(_ operation: SyncOperation) async throws
-    func update(_ operation: SyncOperation) async throws
-    func pendingOperations() async throws -> [SyncOperation]
-    func operations(inAggregate aggregateID: UUID) async throws -> [SyncOperation]
+    func saveAtomically(session: WorkoutSession, enqueueing operations: [Operation]) async throws
+    func enqueue(_ operation: Operation) async throws
+    func update(_ operation: Operation) async throws
+    func pendingOperations() async throws -> [Operation]
+    func operations(inAggregate aggregateID: UUID) async throws -> [Operation]
     func nextSequence(forAggregate aggregateID: UUID) async throws -> Int
 }
 
@@ -33,10 +49,10 @@ public protocol AuditEventStore: Sendable {
 
 // MARK: - In-memory reference implementation
 
-public actor InMemoryStore: WorkoutSessionRepository, SyncOperationStore, AuditEventStore {
+public actor InMemoryStore<Operation: OutboxOperation>: WorkoutSessionRepository, SyncOperationStore, AuditEventStore {
     private var sessions: [Identifier<WorkoutSession>: WorkoutSession] = [:]
-    private var operations: [Identifier<SyncOperation>: SyncOperation] = [:]
-    private var operationOrder: [Identifier<SyncOperation>] = []
+    private var operations: [Operation.ID: Operation] = [:]
+    private var operationOrder: [Operation.ID] = []
     private var auditEvents: [AuditEvent] = []
 
     /// Test hook: when set, the next `saveAtomically` throws after doing nothing —
@@ -69,7 +85,7 @@ public actor InMemoryStore: WorkoutSessionRepository, SyncOperationStore, AuditE
 
     public struct SimulatedCrash: Error {}
 
-    public func saveAtomically(session: WorkoutSession, enqueueing newOperations: [SyncOperation]) async throws {
+    public func saveAtomically(session: WorkoutSession, enqueueing newOperations: [Operation]) async throws {
         if failNextAtomicWrite {
             failNextAtomicWrite = false
             throw SimulatedCrash()
@@ -81,21 +97,21 @@ public actor InMemoryStore: WorkoutSessionRepository, SyncOperationStore, AuditE
         }
     }
 
-    public func enqueue(_ operation: SyncOperation) async throws {
+    public func enqueue(_ operation: Operation) async throws {
         operations[operation.id] = operation
         operationOrder.append(operation.id)
     }
 
-    public func update(_ operation: SyncOperation) async throws {
+    public func update(_ operation: Operation) async throws {
         operations[operation.id] = operation
     }
 
-    public func pendingOperations() async throws -> [SyncOperation] {
+    public func pendingOperations() async throws -> [Operation] {
         operationOrder.compactMap { operations[$0] }
-            .filter { $0.status == .pending || $0.status == .inFlight }
+            .filter(\.awaitingReplay)
     }
 
-    public func operations(inAggregate aggregateID: UUID) async throws -> [SyncOperation] {
+    public func operations(inAggregate aggregateID: UUID) async throws -> [Operation] {
         operationOrder.compactMap { operations[$0] }
             .filter { $0.aggregateID == aggregateID }
             .sorted { $0.sequence < $1.sequence }

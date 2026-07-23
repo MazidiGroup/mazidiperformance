@@ -15,5 +15,12 @@ The handoff (panels 4i, 5f, 7i, 14h) requires honest offline behaviour: local-fi
 
 ## Consequences
 - The queue is the only path to the network for mutations — no view fires ad-hoc writes.
+- Layering: the concrete `SyncOperation` type (status machine, idempotency key, retry
+  semantics) lives in MazidiSync. MazidiPersistence stays sync-agnostic — it defines a
+  generic outbox contract, `SyncOperationStore<Operation>` over a minimal
+  `OutboxOperation` protocol (identity, aggregate ordering, awaiting-replay flag), and
+  MazidiSync supplies the concrete type (`SyncOutboxStore` / `InMemorySyncStore`
+  typealiases). This avoids a MazidiPersistence → MazidiSync dependency cycle without
+  moving transport concerns into the domain layer.
 - Crash/kill at any point leaves either (a) nothing, or (b) local state + queued op — both recoverable. This invariant is unit-tested.
 - Server API must implement idempotency-key storage; recorded as backend dependency R-02.

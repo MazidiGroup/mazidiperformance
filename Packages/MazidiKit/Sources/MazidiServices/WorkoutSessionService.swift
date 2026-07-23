@@ -20,12 +20,12 @@ public actor WorkoutSessionService {
     /// the GRDB adapter will too — one database, one transaction scope).
     public struct InMemoryStoreBundle: Sendable {
         public let sessions: any WorkoutSessionRepository
-        public let operations: any SyncOperationStore
+        public let operations: SyncOutboxStore
         public let audit: any AuditEventStore
 
         public init(
             sessions: any WorkoutSessionRepository,
-            operations: any SyncOperationStore,
+            operations: SyncOutboxStore,
             audit: any AuditEventStore
         ) {
             self.sessions = sessions

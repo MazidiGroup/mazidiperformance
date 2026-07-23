@@ -45,7 +45,7 @@ private func op(aggregate: UUID, seq: Int, key: UUID = UUID()) -> SyncOperation 
 
 @Suite struct SyncEngineTests {
     @Test func drainsQueueInAggregateOrder() async throws {
-        let store = InMemoryStore()
+        let store = InMemorySyncStore()
         let aggregate = UUID()
         for seq in 0..<3 { try await store.enqueue(op(aggregate: aggregate, seq: seq)) }
         let transport = ScriptedTransport(script: [])
@@ -60,7 +60,7 @@ private func op(aggregate: UUID, seq: Int, key: UUID = UUID()) -> SyncOperation 
     }
 
     @Test func retryableFailureHaltsAggregateAndPreservesOrder() async throws {
-        let store = InMemoryStore()
+        let store = InMemorySyncStore()
         let aggregate = UUID()
         for seq in 0..<3 { try await store.enqueue(op(aggregate: aggregate, seq: seq)) }
         // First op succeeds, second hits a network error.
@@ -81,7 +81,7 @@ private func op(aggregate: UUID, seq: Int, key: UUID = UUID()) -> SyncOperation 
     }
 
     @Test func retryReusesSameIdempotencyKey() async throws {
-        let store = InMemoryStore()
+        let store = InMemorySyncStore()
         let aggregate = UUID()
         let key = UUID()
         try await store.enqueue(op(aggregate: aggregate, seq: 0, key: key))
@@ -98,7 +98,7 @@ private func op(aggregate: UUID, seq: Int, key: UUID = UUID()) -> SyncOperation 
     @Test func crashRecoveryResendIsDeduplicatedByServerKeyStore() async throws {
         // Simulates: op sent, server acknowledged, but the client crashed before
         // persisting the ack — op stays inFlight and is resent on next launch.
-        let store = InMemoryStore()
+        let store = InMemorySyncStore()
         let aggregate = UUID()
         let key = UUID()
         var o = op(aggregate: aggregate, seq: 0, key: key)
@@ -117,7 +117,7 @@ private func op(aggregate: UUID, seq: Int, key: UUID = UUID()) -> SyncOperation 
     }
 
     @Test func terminalRejectionParksOperationAndSurfacesStatus() async throws {
-        let store = InMemoryStore()
+        let store = InMemorySyncStore()
         let aggregate = UUID()
         try await store.enqueue(op(aggregate: aggregate, seq: 0))
         try await store.enqueue(op(aggregate: aggregate, seq: 1))
@@ -134,7 +134,7 @@ private func op(aggregate: UUID, seq: Int, key: UUID = UUID()) -> SyncOperation 
     }
 
     @Test func authExpiryPausesQueueWithoutLosingOperations() async throws {
-        let store = InMemoryStore()
+        let store = InMemorySyncStore()
         let aggregate = UUID()
         for seq in 0..<2 { try await store.enqueue(op(aggregate: aggregate, seq: seq)) }
         let transport = ScriptedTransport(script: [.authExpired])
@@ -148,7 +148,7 @@ private func op(aggregate: UUID, seq: Int, key: UUID = UUID()) -> SyncOperation 
     }
 
     @Test func independentAggregatesDoNotBlockEachOther() async throws {
-        let store = InMemoryStore()
+        let store = InMemorySyncStore()
         let a = UUID(), b = UUID()
         // Enqueue interleaved: a0 (will fail), b0 (should still be attempted).
         try await store.enqueue(op(aggregate: a, seq: 0))

@@ -6,7 +6,7 @@ import MazidiPersistence
 import MazidiSync
 import MazidiFoundations
 
-private func makeService(store: InMemoryStore, clock: FixedClock = FixedClock()) -> WorkoutSessionService {
+private func makeService(store: InMemorySyncStore, clock: FixedClock = FixedClock()) -> WorkoutSessionService {
     WorkoutSessionService(
         store: .init(sessions: store, operations: store, audit: store),
         clock: clock,
@@ -25,7 +25,7 @@ private func makeWorkout() -> (AssignedWorkout, AssignedExercise) {
 
 @Suite struct WorkoutSessionServiceTests {
     @Test func everyMutationEnqueuesExactlyOneOrderedOperation() async throws {
-        let store = InMemoryStore()
+        let store = InMemorySyncStore()
         let service = makeService(store: store)
         let (workout, squat) = makeWorkout()
 
@@ -42,7 +42,7 @@ private func makeWorkout() -> (AssignedWorkout, AssignedExercise) {
     }
 
     @Test func crashDuringAtomicWriteLosesNeitherHalf() async throws {
-        let store = InMemoryStore()
+        let store = InMemorySyncStore()
         let service = makeService(store: store)
         let (workout, squat) = makeWorkout()
         let session = try await service.start(workout: workout, epoch: 1)
@@ -61,7 +61,7 @@ private func makeWorkout() -> (AssignedWorkout, AssignedExercise) {
     }
 
     @Test func restoreAfterRelaunchFindsResumableSession() async throws {
-        let store = InMemoryStore()
+        let store = InMemorySyncStore()
         let (workout, squat) = makeWorkout()
         do {
             let service = makeService(store: store)
@@ -78,7 +78,7 @@ private func makeWorkout() -> (AssignedWorkout, AssignedExercise) {
     }
 
     @Test func completedSessionIsNotResumable() async throws {
-        let store = InMemoryStore()
+        let store = InMemorySyncStore()
         let (workout, _) = makeWorkout()
         let service = makeService(store: store)
         _ = try await service.start(workout: workout, epoch: 1)
@@ -90,7 +90,7 @@ private func makeWorkout() -> (AssignedWorkout, AssignedExercise) {
     }
 
     @Test func serverEpochSupersessionIsAuditedAndPreservesData() async throws {
-        let store = InMemoryStore()
+        let store = InMemorySyncStore()
         let service = makeService(store: store)
         let (workout, squat) = makeWorkout()
         _ = try await service.start(workout: workout, epoch: 1)
@@ -106,7 +106,7 @@ private func makeWorkout() -> (AssignedWorkout, AssignedExercise) {
     }
 
     @Test func auditChainLinksEvents() async throws {
-        let store = InMemoryStore()
+        let store = InMemorySyncStore()
         let service = makeService(store: store)
         let (workout, _) = makeWorkout()
         _ = try await service.start(workout: workout, epoch: 1)
@@ -119,7 +119,7 @@ private func makeWorkout() -> (AssignedWorkout, AssignedExercise) {
     }
 
     @Test func endToEndSyncAfterOfflineWorkout() async throws {
-        let store = InMemoryStore()
+        let store = InMemorySyncStore()
         let service = makeService(store: store)
         let (workout, squat) = makeWorkout()
         let session = try await service.start(workout: workout, epoch: 1)
