@@ -65,8 +65,10 @@ struct ClientHomeView: View {
             Button("View workout", action: onViewWorkout)
                 .buttonStyle(.mazidiPrimary)
                 .accessibilityIdentifier(A11yID.todayStartWorkout)
+            #if DEBUG
             DevConnectivityToggle(model: model)
                 .padding(.top, 4)
+            #endif
         }
     }
 
@@ -86,8 +88,10 @@ struct ClientHomeView: View {
             Button("Resume workout", action: onResume)
                 .buttonStyle(.mazidiPrimary)
                 .accessibilityIdentifier(A11yID.todayResumeWorkout)
+            #if DEBUG
             DevConnectivityToggle(model: model)
                 .padding(.top, 4)
+            #endif
         }
     }
 

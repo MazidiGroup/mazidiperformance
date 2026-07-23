@@ -67,6 +67,31 @@ final class ClientWorkoutUITests: XCTestCase {
                       "Resuming should return to the active workout")
     }
 
+    /// Fixture/development controls must exist only in DEBUG. This test compiles a branch
+    /// per configuration: in Debug it proves the dev role entry and fixture connectivity
+    /// toggle are present; in Release (run with `-configuration Release test`) it proves the
+    /// dev role selection and the fixture toggle are absent. A Release binary-strings check
+    /// in the milestone validation provides the complementary static proof.
+    func testDevControlsMatchBuildConfiguration() {
+        let app = XCUIApplication()
+        app.launch()
+        #if DEBUG
+        let continueClient = app.buttons["dev_continue_client"]
+        XCTAssertTrue(continueClient.waitForExistence(timeout: 10),
+                      "Debug builds expose the dev role selection")
+        continueClient.tap()
+        XCTAssertTrue(app.switches["dev_connectivity_toggle"].waitForExistence(timeout: 10),
+                      "Debug builds expose the fixture connectivity toggle on Today")
+        #else
+        XCTAssertFalse(app.buttons["dev_continue_client"].waitForExistence(timeout: 5),
+                       "Release builds must not expose dev role selection")
+        XCTAssertFalse(app.buttons["dev_continue_coach"].exists,
+                       "Release builds must not expose dev role selection")
+        XCTAssertFalse(app.switches["dev_connectivity_toggle"].exists,
+                       "Release builds must not expose the fixture connectivity toggle")
+        #endif
+    }
+
     /// Completing the workout shows the completion summary and Done.
     func testCompleteWorkout() {
         let app = launchAsClient()

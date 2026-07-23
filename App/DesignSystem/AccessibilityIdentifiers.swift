@@ -47,5 +47,9 @@ enum A11yID {
 
     // Sync status
     static let syncStatusBadge = "sync_status_badge"
+    #if DEBUG
+    /// Development-only connectivity toggle. Defined only in DEBUG so the identifier string
+    /// is not compiled into Release builds.
     static let devConnectivityToggle = "dev_connectivity_toggle"
+    #endif
 }

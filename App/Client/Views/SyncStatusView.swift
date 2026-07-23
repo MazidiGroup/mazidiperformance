@@ -31,8 +31,10 @@ struct SyncStatusView: View {
     }
 }
 
+#if DEBUG
 /// Development-only connectivity toggle so the honest offline → waiting → synced states can
-/// be exercised without a backend. Clearly labelled as a dev affordance (R-01/R-02).
+/// be exercised without a backend. Compiled only in DEBUG (R-01/R-02) — it and its label
+/// never exist in Release builds; the normal SyncStatusView is unaffected.
 struct DevConnectivityToggle: View {
     @Bindable var model: ClientWorkoutModel
 
@@ -46,3 +48,4 @@ struct DevConnectivityToggle: View {
         .accessibilityIdentifier(A11yID.devConnectivityToggle)
     }
 }
+#endif
