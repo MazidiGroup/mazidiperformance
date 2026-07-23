@@ -26,14 +26,11 @@ struct SignedOutView: View {
     }
 }
 
-/// Client shell — slice 1 builds out the Today → Workout journey (panels 3a–3e).
+/// Client shell — slice 1 Today → Workout journey (panels 3a–3e, 4a/4b, 5a/5b, 7b/7d/7g).
+/// The real navigation graph and dependency wiring live in `ClientRootView`.
 struct ClientShellView: View {
     var body: some View {
-        NavigationStack {
-            Text("Client Today — slice 1 in progress")
-                .foregroundStyle(MazidiColor.textSecondary)
-                .navigationTitle("Today")
-        }
+        ClientRootView()
     }
 }
 
