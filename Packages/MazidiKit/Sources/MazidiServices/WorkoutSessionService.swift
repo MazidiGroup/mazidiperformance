@@ -97,6 +97,24 @@ public actor WorkoutSessionService {
         session = s
     }
 
+    /// Exit without finishing (5a/5g "nothing lost"): recorded work is kept and the session
+    /// stays resumable from Today (5b). Maps to `paused` at the domain layer.
+    public func exit() async throws {
+        guard var s = session else { throw ServiceError.noActiveSession }
+        try s.exitKeepingProgress()
+        try await store.sessions.save(s)
+        session = s
+    }
+
+    /// Discard an unfinished session by explicit user choice (5g). Recorded sets remain
+    /// readable history; the abandon transition is enqueued for sync like other mutations.
+    public func discard() async throws {
+        guard var s = session else { throw ServiceError.noActiveSession }
+        try s.abandon()
+        try await persist(s, kind: .workoutSessionAbandoned, auditKind: nil)
+        session = s
+    }
+
     public func complete() async throws -> WorkoutSession {
         guard var s = session else { throw ServiceError.noActiveSession }
         try s.complete(at: clock.now())
