@@ -1,0 +1,9 @@
+.DS_Store
+Thumbs.db
+*.tmp
+*.log
+
+# Do not add the complete production animation library to Git.
+production-animation-library/
+full-animation-library/
+*.mov
