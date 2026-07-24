@@ -36,6 +36,9 @@ final class ClientWorkoutModel {
 
     private(set) var today: TodayState = .loading
     private(set) var session: WorkoutSession?
+    /// The coach assignment Today offers, when one is open (ADR-0009). Nil falls back to
+    /// the fixture workout until the backend delivers real programming everywhere.
+    private(set) var pendingAssignment: WorkoutAssignment?
     private(set) var selectedExerciseID: Identifier<AssignedExercise>?
     private(set) var restTimer: RestTimer?
     private(set) var restRemaining: Int = 0
@@ -57,7 +60,13 @@ final class ClientWorkoutModel {
 
     // MARK: Read-through helpers for views
 
-    var workout: AssignedWorkout { session?.workout ?? env.assignedWorkout }
+    var workout: AssignedWorkout {
+        if let session { return session.workout }
+        if let assignment = pendingAssignment, let mapped = try? assignment.assignedWorkout() {
+            return mapped
+        }
+        return env.assignedWorkout
+    }
     var orderedExercises: [AssignedExercise] { workout.allExercises }
     var phase: WorkoutSession.Phase { session?.phase ?? .notStarted }
     var isActive: Bool { phase == .active }
@@ -113,12 +122,15 @@ final class ClientWorkoutModel {
     func loadToday() async {
         today = .loading
         do {
+            // Coach assignments take precedence (ADR-0009); the fixture workout stays
+            // as the no-assignment fallback until the backend exists.
+            pendingAssignment = await env.openAssignments().first
             if let resumable = try await service.restoreIfNeeded() {
                 session = resumable
                 today = resumable.phase == .completed ? .finished(resumable) : .resume(resumable)
                 restoreEphemeralState(from: resumable)
             } else {
-                today = .ready(env.assignedWorkout)
+                today = .ready(workout)
             }
             await refreshSync()
         } catch {
@@ -142,7 +154,14 @@ final class ClientWorkoutModel {
 
     func begin() async {
         do {
-            let started = try await service.start(workout: env.assignedWorkout, epoch: 1)
+            let started: WorkoutSession
+            if let assignment = pendingAssignment {
+                // The frozen version snapshot seeds the session; execution never
+                // mutates the assignment's prescription (ADR-0009).
+                started = try await service.startAssignment(assignment, epoch: 1)
+            } else {
+                started = try await service.start(workout: env.assignedWorkout, epoch: 1)
+            }
             session = started
             selectedExerciseID = started.workout.allExercises.first?.id
             persistPosition()

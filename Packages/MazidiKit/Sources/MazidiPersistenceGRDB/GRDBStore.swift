@@ -348,3 +348,117 @@ extension GRDBStore: AuditEventStore {
         }
     }
 }
+
+// MARK: - ProgrammingRepository (ADR-0009)
+
+extension GRDBStore: ProgrammingRepository {
+    public func saveTemplateAtomically(_ template: WorkoutTemplate, enqueueing operations: [SyncOperation]) async throws {
+        let hook = atomicWriteHook
+        try await writer.write { db in
+            try WorkoutTemplateRecord(template: template).save(db)
+            try hook?()
+            for operation in operations {
+                try OutboxOperationRecord(operation: operation).insert(db)
+            }
+        }
+    }
+
+    public func template(id: Identifier<WorkoutTemplate>) async throws -> WorkoutTemplate? {
+        let key = id.rawValue.uuidString
+        return try await writer.read { db in
+            try WorkoutTemplateRecord.fetchOne(db, key: key).map { try $0.toDomain() }
+        }
+    }
+
+    public func allTemplates() async throws -> [WorkoutTemplate] {
+        try await writer.read { db in
+            try WorkoutTemplateRecord
+                .order(Column("updated_at").desc)
+                .fetchAll(db)
+                .map { try $0.toDomain() }
+        }
+    }
+
+    /// Publication (ADR-0009): bumped template + immutable version row + outbox
+    /// operations, one transaction. Versions are INSERTed, never saved-over — a
+    /// duplicate publication of the same (template, versionNumber) violates the UNIQUE
+    /// constraint and rolls back rather than mutating an immutable row.
+    public func publishAtomically(
+        template: WorkoutTemplate,
+        version: WorkoutTemplateVersion,
+        enqueueing operations: [SyncOperation]
+    ) async throws {
+        let hook = atomicWriteHook
+        try await writer.write { db in
+            try WorkoutTemplateRecord(template: template).save(db)
+            try TemplateVersionRecord(version: version).insert(db)
+            try hook?()
+            for operation in operations {
+                try OutboxOperationRecord(operation: operation).insert(db)
+            }
+        }
+    }
+
+    public func version(id: Identifier<WorkoutTemplateVersion>) async throws -> WorkoutTemplateVersion? {
+        let key = id.rawValue.uuidString
+        return try await writer.read { db in
+            try TemplateVersionRecord.fetchOne(db, key: key).map { try $0.toDomain() }
+        }
+    }
+
+    public func versions(templateID: Identifier<WorkoutTemplate>) async throws -> [WorkoutTemplateVersion] {
+        let key = templateID.rawValue.uuidString
+        return try await writer.read { db in
+            try TemplateVersionRecord
+                .filter(Column("template_id") == key)
+                .order(Column("version_number"))
+                .fetchAll(db)
+                .map { try $0.toDomain() }
+        }
+    }
+
+    public func saveAssignmentAtomically(_ assignment: WorkoutAssignment, enqueueing operations: [SyncOperation]) async throws {
+        let hook = atomicWriteHook
+        try await writer.write { db in
+            try WorkoutAssignmentRecord(assignment: assignment).save(db)
+            try hook?()
+            for operation in operations {
+                try OutboxOperationRecord(operation: operation).insert(db)
+            }
+        }
+    }
+
+    public func assignment(id: Identifier<WorkoutAssignment>) async throws -> WorkoutAssignment? {
+        let key = id.rawValue.uuidString
+        return try await writer.read { db in
+            try WorkoutAssignmentRecord.fetchOne(db, key: key).map { try $0.toDomain() }
+        }
+    }
+
+    public func allAssignments() async throws -> [WorkoutAssignment] {
+        try await writer.read { db in
+            try WorkoutAssignmentRecord
+                .order(Column("assigned_at").desc)
+                .fetchAll(db)
+                .map { try $0.toDomain() }
+        }
+    }
+
+    /// Start/completion linkage (ADR-0009): the executing session, the assignment's
+    /// lifecycle transition, and their outbox operations commit together or not at all.
+    public func recordAssignmentTransitionAtomically(
+        session: WorkoutSession,
+        assignment: WorkoutAssignment,
+        enqueueing operations: [SyncOperation]
+    ) async throws {
+        let hook = atomicWriteHook
+        try await writer.write { db in
+            try Self.persist(session, in: db)
+            try WorkoutAssignmentRecord(assignment: assignment).save(db)
+            try hook?()
+            for operation in operations {
+                try OutboxOperationRecord(operation: operation).insert(db)
+            }
+        }
+    }
+}

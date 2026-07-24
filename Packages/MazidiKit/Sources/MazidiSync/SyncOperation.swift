@@ -13,6 +13,12 @@ public struct SyncOperation: Sendable, Codable, Equatable, Identifiable {
         case workoutSessionCompleted
         case workoutSessionAbandoned
         case auditEventAppended
+        // Coach programming (ADR-0009): aggregate = template id
+        case templateDraftSaved
+        case templatePublished
+        // Assignments (ADR-0009): aggregate = assignment id
+        case assignmentCreated
+        case assignmentStatusChanged
     }
 
     public enum Status: String, Sendable, Codable {
@@ -120,6 +126,9 @@ public typealias SyncOutboxStore = any SyncOperationStore<SyncOperation>
 /// The in-memory reference store specialised to the concrete operation type — what tests
 /// and non-Apple hosts construct.
 public typealias InMemorySyncStore = InMemoryStore<SyncOperation>
+
+/// Concrete composition boundary for coach programming persistence (ADR-0009).
+public typealias ProgrammingStore = any ProgrammingRepository<SyncOperation>
 
 /// Outcome classification for a transport attempt.
 public enum SyncAttemptOutcome: Sendable, Equatable {

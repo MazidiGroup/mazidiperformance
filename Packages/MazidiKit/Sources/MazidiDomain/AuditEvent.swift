@@ -17,6 +17,12 @@ public struct AuditEvent: Sendable, Codable, Equatable {
         case paymentAmended
         case programmePublished
         case programmeSafetyEdit
+        // Coach programming slice (ADR-0009) — subjects carry ids only, never content
+        case workoutDraftCreated
+        case workoutAssigned
+        case assignmentStarted
+        case assignmentCompleted
+        case assignmentCancelled
         case progressionApproved
         case relationshipEnded
         case dataExportRequested

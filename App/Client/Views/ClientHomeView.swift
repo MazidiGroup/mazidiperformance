@@ -101,6 +101,10 @@ struct ClientHomeView: View {
 
     private var assignedCard: some View {
         VStack(alignment: .leading, spacing: MazidiMetric.stackSpacing) {
+            if model.pendingAssignment != nil {
+                StatusBadge(kind: .info, label: "Assigned by your coach", systemImage: "person.crop.circle.badge.checkmark")
+                    .accessibilityIdentifier("today_assigned_badge")
+            }
             WorkoutSummaryCard(model: model)
                 .accessibilityIdentifier(A11yID.todayWorkoutCard)
             Button("View workout", action: onViewWorkout)

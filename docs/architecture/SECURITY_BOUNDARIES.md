@@ -56,6 +56,19 @@ not exist (R-01/R-02, DL-07).
   UserDefaults key, launch argument, or environment variable can change role in Release
   (dev provider is compiled out; binary-checked and tested per release configuration).
 
+## Coach programming & assignments (ADR-0009)
+- Programming writes are reachable only from the Coach shell (validated coach claims);
+  clients hold only their own assignment rows inside their account database, filtered
+  again by assignee on read (defence in depth). Cross-account isolation is structural:
+  the other party's data lives in a database this session cannot open.
+- **Remaining server requirement (R-01/R-02):** relationship-level authorization (which
+  coach may assign to which client) and real delivery/receipt confirmation cannot be
+  enforced on-device and are deferred to the backend. Coach-side status therefore never
+  claims delivery ("Queued — delivery confirms with backend").
+- The DEBUG-only `DevelopmentAssignmentRelay` copies assignment rows between dev fixture
+  accounts on one device as the delivery stand-in; it never runs in Release, never
+  relays to non-fixture identities, and never fabricates delivery confirmation.
+
 ## Deferred (recorded, not fabricated)
 - Production auth provider + token endpoints (R-01; provider choice needs its own ADR).
 - Server-side revocation guarantees & "signed out everywhere" (13c honest-limitation copy

@@ -332,11 +332,13 @@ private func makeService(store: GRDBStore, clock: FixedClock) -> WorkoutSessionS
         let tables = try await store.writer.read { db in
             try String.fetchAll(db, sql: "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'grdb_%' AND name NOT LIKE 'sqlite_%' ORDER BY name")
         }
-        #expect(tables == ["audit_event", "exercise_swap", "outbox_operation", "set_entry", "workout_session"])
+        #expect(tables == ["audit_event", "exercise_swap", "outbox_operation", "set_entry",
+                           "template_version", "workout_assignment", "workout_session",
+                           "workout_template"])
         let migrated = try await store.writer.read { db in
             try GRDBSchema.migrator().appliedIdentifiers(db)
         }
-        #expect(migrated == ["v1-workout-persistence"])
+        #expect(migrated == ["v1-workout-persistence", "v2-coach-programming"])
     }
 
     @Test func forwardMigrationToATestFixturePreservesData() async throws {
@@ -351,9 +353,9 @@ private func makeService(store: GRDBStore, clock: FixedClock) -> WorkoutSessionS
             try await store.save(session)
         }
 
-        // "Next app version": v1 + a v2 test fixture. Forward-only, non-destructive.
+        // "Next app version": current schema + a test fixture. Forward-only, non-destructive.
         var upgradedMigrator = GRDBSchema.migrator()
-        upgradedMigrator.registerMigration("v2-test-fixture") { db in
+        upgradedMigrator.registerMigration("v3-test-fixture") { db in
             try db.alter(table: "workout_session") { t in
                 t.add(column: "test_note", .text)
             }
@@ -368,7 +370,7 @@ private func makeService(store: GRDBStore, clock: FixedClock) -> WorkoutSessionS
         let loaded = try #require(try await upgraded.session(id: session.id))
         #expect(loaded.phase == .active)
         let applied = try await upgraded.writer.read { db in try migrator.appliedIdentifiers(db) }
-        #expect(applied == ["v1-workout-persistence", "v2-test-fixture"])
+        #expect(applied == ["v1-workout-persistence", "v2-coach-programming", "v3-test-fixture"])
     }
 
     // MARK: Recovery signal — the four conditions are typed and distinguishable

@@ -83,6 +83,16 @@ swiftlint              # config in .swiftlint.yml (pending)
   CODE_SIGNING_REQUIRED=NO` to `xcodebuild … test` — a **signed** local run hides this
   class of failure because the app then has a keychain-access group.
 
+## Coach programming slice (ADR-0009)
+
+The Coach shell authors workouts against the bundled fixture exercise library; the dev
+relay (`DevelopmentAssignmentRelay`, DEBUG only) stands in for the delivery backend so
+the Coach→Client journey runs end-to-end on one device. Coach-side assignment status
+stays "Queued — delivery confirms with backend" by design; started/completed states
+shown to the coach are real client-recorded facts pulled back by the relay. UI tests
+share one isolated `MAZIDI_STORE_DIR` base per journey, under which each dev account
+gets its hashed directory.
+
 ## CI toolchain gap — build against Swift 6.1 (Xcode 16.4), not just local
 
 Local validation runs Xcode 26.x (Swift 6.3); CI pins **Xcode 16.4 (Swift 6.1)** on a
