@@ -21,4 +21,20 @@ public enum AssignmentDeliveryState: String, Sendable, Codable, Equatable, CaseI
     /// True only for the state that represents genuine server acceptance — the single
     /// point at which an `assignmentDelivered` audit event may fire (ADR-0012 §10).
     public var isServerAccepted: Bool { self == .acceptedByServer }
+
+    /// Legal forward transitions (ADR-0012 §7). Strictly ordered; "Queued" never jumps to
+    /// "Delivered" or "Opened", and server acceptance never implies the client opened it.
+    public func canAdvance(to next: AssignmentDeliveryState) -> Bool {
+        switch (self, next) {
+        case (.createdLocally, .queuedForUpload),
+             (.queuedForUpload, .acceptedByServer),
+             (.queuedForUpload, .permanentlyRejected),
+             (.acceptedByServer, .availableToClient),
+             (.acceptedByServer, .permanentlyRejected),
+             (.availableToClient, .openedByClient):
+            return true
+        default:
+            return false
+        }
+    }
 }

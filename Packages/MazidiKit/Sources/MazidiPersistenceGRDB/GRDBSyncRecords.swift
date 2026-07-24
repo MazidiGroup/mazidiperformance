@@ -198,6 +198,56 @@ extension GRDBStore {
         return try await writer.read { db in try AssignmentDeliveryRow.fetchOne(db, key: key) }
     }
 
+    public enum AssignmentDeliveryError: Error, Equatable {
+        case notFound
+        case illegalTransition(from: AssignmentDeliveryState, to: AssignmentDeliveryState)
+    }
+
+    /// Advance an assignment's delivery/receipt state with a guarded transition, in one
+    /// transaction (ADR-0012 §7). `delivered_at` is set only on `acceptedByServer`,
+    /// `opened_at` only on `openedByClient` (a distinct receipt event). The
+    /// `assignmentDelivered` audit event fires ONLY on genuine `acceptedByServer` — never at
+    /// `queuedForUpload`, never on the DEBUG relay path. The immutable content snapshot and
+    /// the execution `status` column are never touched.
+    public func advanceAssignmentDelivery(
+        id: Identifier<WorkoutAssignment>,
+        to newState: AssignmentDeliveryState,
+        remoteID: String? = nil,
+        serverVersion: Int? = nil,
+        at now: Date,
+        auditActorID: UUID
+    ) async throws {
+        let key = id.rawValue.uuidString
+        try await writer.write { db in
+            guard let row = try AssignmentDeliveryRow.fetchOne(db, key: key) else {
+                throw AssignmentDeliveryError.notFound
+            }
+            let current = AssignmentDeliveryState(rawValue: row.deliveryState) ?? .createdLocally
+            guard current.canAdvance(to: newState) else {
+                throw AssignmentDeliveryError.illegalTransition(from: current, to: newState)
+            }
+            let deliveredAt = newState == .acceptedByServer ? now : row.deliveredAt
+            let openedAt = newState == .openedByClient ? now : row.openedAt
+            try db.execute(sql: """
+                UPDATE workout_assignment
+                SET delivery_state = ?,
+                    remote_id = COALESCE(?, remote_id),
+                    server_version = COALESCE(?, server_version),
+                    delivered_at = ?, opened_at = ?
+                WHERE id = ?
+                """, arguments: [newState.rawValue, remoteID, serverVersion, deliveredAt, openedAt, key])
+
+            // Audit only genuine server acceptance — in the SAME transaction.
+            if newState == .acceptedByServer {
+                let previousHash = try AuditEventRecord.order(sql: "rowid DESC").fetchOne(db)
+                    .map { auditChainHash(of: try $0.toDomain()) } ?? "0"
+                let event = AuditEvent(kind: .assignmentDelivered, actorID: auditActorID,
+                                       subjectDescription: "assignment:\(key)", occurredAt: now, previousHash: previousHash)
+                try AuditEventRecord(event: event).insert(db)
+            }
+        }
+    }
+
     /// Update only the delivery/receipt/remote-binding columns; the immutable snapshot and
     /// execution `status` are untouched.
     func updateAssignmentDelivery(

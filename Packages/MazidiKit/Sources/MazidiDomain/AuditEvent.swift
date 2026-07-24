@@ -33,6 +33,17 @@ public struct AuditEvent: Sendable, Codable, Equatable {
         case sensitiveRecordAccessed
         case alertAcknowledged
         case alertResolved
+        // Backend sync foundation (ADR-0012) — subjects carry ids only, never tokens,
+        // bodies, notes, messages, credentials or signed URLs.
+        /// Genuine server acceptance of an assignment (fires ONLY on acceptedByServer —
+        /// never the DEBUG relay, never at queuedForUpload). "Queued ≠ Delivered".
+        case assignmentDelivered
+        case relationshipActivated
+        case syncBatchAttempted
+        case syncBatchAcknowledged
+        case mutationPermanentlyRejected
+        case pullChangesApplied
+        case revocationDiscovered
     }
 
     public let id: Identifier<AuditEvent>
