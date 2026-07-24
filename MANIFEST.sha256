@@ -2,7 +2,8 @@ cf64a1b82199bac7a7faabe76d8e786b5b9fcfe6233fda2a4e15900bf9166729  ./.gitattribut
 6123e04e79d9bd97cbe9218c7d7aeef9197be5a8d8e0d7c85137423e6d72be50  ./.github/workflows/ci.yml
 ec0b414c547252ef5668b06194d3f79f671fb9f21c339262245e70b9b57756f6  ./.gitignore
 1a1d36de5fbdfdfeb447979b09360989c37c8fb9a3dd035e49182fac9e7f89c6  ./App/Auth/AuthProviders.swift
-c31b4ce605cef1e060b43b4c43f010615b4841e9a9941e52e1f4553315f4c535  ./App/Auth/SessionModel.swift
+0c298c8ada5f77e212de1948e0bf000687a3b89320c35eeb28e40720fd8d3216  ./App/Auth/DevelopmentCredentialStore.swift
+2ff33f73bc43cf34f9a6dca710f9465dd5f1b5f2a66bd3b4c5b6a3055b81965a  ./App/Auth/SessionModel.swift
 ce3ea5029ff7aaafdfefd42965b6d57abd02c7849ec55728ef4f960680b52fbb  ./App/Client/ClientRootView.swift
 7ee203a3644461c42dd17020cd0c26d25cadf145748fbb15031b2bf01c28cce8  ./App/Client/Model/ClientWorkoutModel.swift
 c54d22b32bdf95facb8864f2fc705425bd740231893f9fbe97778a89194c6187  ./App/Client/Support/ClientEnvironment.swift
@@ -23,7 +24,7 @@ ba6363abb42e1e057c6ae5d6e425f3a8ddfaa1332a00e3451a3063ad7bf17498  ./App/DesignSy
 1a49738cbe9cef533e544e2eef02de8f6cdba7ba27ed387172c40b9950ce54f8  ./App/DesignSystem/MazidiColor.swift
 8cf6c15fe21fb133e99e8d629cdd4100cab82b3aa110a727bee6cba4fccc3078  ./App/DesignSystem/MazidiTypography.swift
 18b1db3739498d21005c63f09919a1a794b1f2d772a1f57a52c850ee5e27fdcd  ./App/MazidiApp.swift
-33534c5a89bc6c2cd1f741a94774577313eb5fc6dd49430d44ca8ce431dbfc2f  ./App/Navigation/Shells.swift
+bdcbdaf6e4fd1708e74fe0e0986814193491f355b7c2a252a519a83d937bb75c  ./App/Navigation/Shells.swift
 f300597f10d3b385fc4d5a3f3959c354d09df5450b233374e90b8d8c64c0d63f  ./App/Platform/KeychainCredentialStore.swift
 41de3433a2581076c632753a9ae89a47916194b46350faaa219d56a4036598ea  ./App/Resources/Fixtures/exercise-content.json
 e4004e42bce213865000f275ecf83e9f6a489ff2b87541a9a3198b7c39b2e82f  ./App/Resources/Media/clips/barbell-bent-over-row.mp4
@@ -518,7 +519,7 @@ dc23aad45776703c9c2e7bfb02b002c066d326bb34e0a1985227b8f0751a246a  ./design/hando
 ad4b003febc25a16360b06ad3392a072af4bbc61f3d2c1bd7b0bad66a7ed2783  ./design/handoff-current/uploads/full-library-videos/dumbbell-row-bilateral.mp4
 21fc800aec2b6264c13974b0d94885b90537a8d339aa8e4303f0ec0086c34fe6  ./design/handoff-current/uploads/full-library-videos/kettlebell-sumo-deadlift.mp4
 6ce086ebe5a651ef5108ab797de13b5aaa139ae7bd86458bb642fffad4b01357  ./docs/ASSET_PIPELINE.md
-200ec8019bbbdc2dcd7a72715374bf6133d67ff0d012ab9f6139c9c92f81ee97  ./docs/BUILD_AND_TEST.md
+48c94aca4da369f355b75a969454779e30fbda11ef73ffe5fc609b8551b900c6  ./docs/BUILD_AND_TEST.md
 59c93ed81dc6315a6be6be7d9ac2a9fe91cbd8e51e9e2892b07aa955ef299f6e  ./docs/DECISION_LOG.md
 ed1ef2891c0fb13fa448321a5110dad3c0460c4064e45a32e347aac238aa2155  ./docs/KNOWN_ISSUES.md
 0c4fb1401a751a4537e66e6ea4415426caf4373bc8678d5388aa27ae2147fb1b  ./docs/PROJECT_STATUS.md
