@@ -1,6 +1,6 @@
 cf64a1b82199bac7a7faabe76d8e786b5b9fcfe6233fda2a4e15900bf9166729  ./.gitattributes
 6123e04e79d9bd97cbe9218c7d7aeef9197be5a8d8e0d7c85137423e6d72be50  ./.github/workflows/ci.yml
-ec0b414c547252ef5668b06194d3f79f671fb9f21c339262245e70b9b57756f6  ./.gitignore
+0bad644669bbd659d8ef3cde90ab9f3cc81f24744964467e3810b56b653ffadc  ./.gitignore
 1a1d36de5fbdfdfeb447979b09360989c37c8fb9a3dd035e49182fac9e7f89c6  ./App/Auth/AuthProviders.swift
 0c298c8ada5f77e212de1948e0bf000687a3b89320c35eeb28e40720fd8d3216  ./App/Auth/DevelopmentCredentialStore.swift
 4538701b8f01fda03885860002a5844e63299ae75155e797eaf29328e02325e7  ./App/Auth/SessionModel.swift
@@ -548,5 +548,7 @@ ee71dfbcfe0508aead64c58d00860455c54160d4a0218ff9da31619e1f3f4ac0  ./docs/archite
 117fc82bb6b8d25aa52bb8736d57cf6ae383a0d9734d1cfc0e467aed05b3d360  ./docs/architecture/adr/ADR-0007-grdb-adapter-package-target.md
 655237d8eca52a34d40a86a2cc624ade0a0c7ae317e14e6dbe516075c3c71ffe  ./docs/architecture/adr/ADR-0008-auth-session-account-boundaries.md
 24381facab225eeab3baff135e6e9ba310e232bd1f19bd7f4903703695492471  ./docs/architecture/adr/ADR-0009-coach-programming-assignment.md
+b1dcfc0676ca33c9082229910ef3497755ca7bc3f956db0fa186b846bd71533b  ./docs/architecture/adr/ADR-0010-exercise-catalogue-content-pipeline.md
 807a4fa7ef955ad34f61e94ae20b7827099add0b75b9ba5e571a4a23a307ad99  ./docs/audit/VERIFICATION_REPORT.md
+4ca59fa98480323a63f12b1f031304ef84d2b7f02794b6468ca71d8d1040ac6a  ./docs/session-handoffs/CURRENT_SESSION_HANDOFF.md
 f27cd8f40519ed3fe38966e4fef388da7be89e5445d88136a3551ec4750f27dc  ./project.yml
