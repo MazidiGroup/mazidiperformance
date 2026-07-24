@@ -16,39 +16,31 @@ additional UI/integration coverage for slice 1.
 
 ---
 
+## Resolved
+
+### M1 — `resumeWorkout()` on an already-active restored session *(resolved)*
+- **Fixed in:** the GRDB durable-persistence milestone (`1b19ace`, `d4e8555`).
+  `WorkoutSessionService.resume()` (and `pause()`) are idempotent no-ops when the session is
+  already in the target phase; a restored still-`.active` session resumes silently.
+- **Proven by:** `pauseAndResumeAreIdempotent` and `restoredActiveSessionResumesWithoutError`
+  in `MazidiServicesTests`.
+
+### M2 — Navigation proceeded even if resume failed *(resolved)*
+- **Fixed in:** `d4e8555`. `ClientWorkoutModel.resumeWorkout()` returns success and
+  `ClientRootView` appends the active route only when resumption held; failures surface the
+  error and stay on Today.
+- **Proven by:** the resume path of `testRelaunchRestoresUnfinishedWorkoutAndCompletionIsFinal`
+  (successful-resume navigation) plus the idempotent-resume service tests removing the
+  spurious-failure path that previously made this reachable.
+
+### M3 — Pausing while already paused surfaced a needless alert *(resolved)*
+- **Fixed in:** `1b19ace`. `service.pause()` is idempotent; re-tapping Pause while paused
+  opens the options sheet without an error alert.
+- **Proven by:** `pauseAndResumeAreIdempotent` in `MazidiServicesTests`.
+
+---
+
 ## Medium
-
-### M1 — `resumeWorkout()` calls `service.resume()` on a possibly already-active session
-- **Where:** `App/Client/Model/ClientWorkoutModel.swift:135` (`resumeWorkout` → `service.resume()`).
-- **Impact:** If a restored session is already in `.active` (not `.paused`), `resume()` throws
-  `invalidTransition` and the UI shows a spurious "Can't resume right now" alert.
-- **Why not fixed now:** Unreachable today — the in-memory store dies with the process, so a
-  restored session is always `.paused` (or absent). It only becomes reachable once sessions
-  persist across launches.
-- **Owning milestone:** S1-persistence.
-- **Acceptance:** `resumeWorkout()` is a no-op (no error) when the session is already active;
-  covered by a service/model test that restores an active session and calls resume.
-
-### M2 — Navigation proceeds even if resume fails
-- **Where:** `App/Client/ClientRootView.swift:21` (`onResume: … await model.resumeWorkout(); path.append(.active)`).
-- **Impact:** `path.append(.active)` runs unconditionally, so a failed resume still navigates
-  into the active workout screen (which then reflects the unchanged phase). Tightly coupled to M1.
-- **Why not fixed now:** Depends on M1's outcome type; fixing navigation guarding in isolation
-  would be speculative before the resume contract is finalized against persistence.
-- **Owning milestone:** S1-persistence.
-- **Acceptance:** navigation into `.active` occurs only when resume succeeds (resume surfaces a
-  success/failure result the router checks); covered by a UI test.
-
-### M3 — Pausing while already paused surfaces a needless alert
-- **Where:** `App/Client/Views/ActiveWorkoutView.swift:41` (toolbar Pause → `await model.pause()`).
-- **Impact:** If the session is already `.paused` and the user taps the toolbar Pause again,
-  `service.pause()` throws `invalidTransition` and shows "Can't pause right now." Minor; the
-  inline paused banner is the normal path.
-- **Why not fixed now:** Cosmetic; the primary paused-state affordance already works. Belongs
-  with the broader transition-guarding cleanup in M1/M2.
-- **Owning milestone:** S1-polish.
-- **Acceptance:** tapping Pause while paused is a no-op (re-opens the options sheet or does
-  nothing), never an error alert.
 
 ### M4 — Session epoch hardcoded to `1`
 - **Where:** `App/Client/Model/ClientWorkoutModel.swift:126` (`service.start(workout:, epoch: 1)`).
