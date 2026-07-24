@@ -33,6 +33,12 @@ production-animation-library/
 full-animation-library/
 *.mov
 
+# ── Content-pipeline working area (ADR-0010) ──────────────────────
+# All generated audit/manifest/report/staging output from the exercise
+# content pipeline; the read-only source library is never extracted
+# anywhere tracked.
+.content-pipeline-work/
+
 # ── Local databases (never commit client data) ────────────────────
 *.sqlite
 *.sqlite-wal
