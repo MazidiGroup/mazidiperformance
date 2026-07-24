@@ -9,6 +9,13 @@ options:
 packages:
   MazidiKit:
     path: Packages/MazidiKit
+# Environment configurations (ARCHITECTURE.md §7). Staging maps to a release-style
+# build; server URLs/flags come from the per-config .xcconfig files (Config/*.xcconfig),
+# never hard-coded. Adding Staging does not change Debug/Release behaviour.
+configs:
+  Debug: debug
+  Staging: release
+  Release: release
 settings:
   base:
     SWIFT_VERSION: "6.0"
@@ -19,16 +26,31 @@ targets:
   MazidiPerformance:
     type: application
     platform: iOS
+    configFiles:
+      Debug: Config/Debug.xcconfig
+      Staging: Config/Staging.xcconfig
+      Release: Config/Release.xcconfig
     sources:
       - App
+      # Canonical exercise catalogue + delivery manifest (ADR-0010), bundled read-only
+      # so the app-facing catalogue read model (ADR-0011 §1) can load them at runtime.
+      # Referenced in place from the generated source-of-truth — not copied into App/.
+      - path: content/exercises/catalogue/catalogue.json
+        buildPhase: resources
+      - path: content/exercises/catalogue/media-manifest.json
+        buildPhase: resources
     dependencies:
       - package: MazidiKit
-        products: [MazidiFoundations, MazidiDomain, MazidiPersistence, MazidiPersistenceGRDB, MazidiSync, MazidiServices, MazidiNetworking, MazidiAuth]
+        products: [MazidiFoundations, MazidiDomain, MazidiPersistence, MazidiPersistenceGRDB, MazidiSync, MazidiServices, MazidiNetworking, MazidiAuth, MazidiContent]
     info:
       path: App/Info.plist
       properties:
         UILaunchScreen: {}
         CFBundleDisplayName: Mazidi Performance
+        # Exercise-media origin (ADR-0010 §6 / ADR-0011 §6), sourced from the active
+        # configuration's .xcconfig (MEDIA_BASE_URL). Empty until a CDN exists (R-02);
+        # empty means the remote media tier is disabled. No secret is stored here.
+        MediaBaseURL: $(MEDIA_BASE_URL)
         # Health/photo/calendar usage strings are added when those features land
         # (phases 5/7) — permissions are off by default and never a prerequisite (8g).
   MazidiPerformanceUITests:
