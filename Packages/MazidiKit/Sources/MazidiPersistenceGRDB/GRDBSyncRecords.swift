@@ -2,6 +2,7 @@ import Foundation
 import GRDB
 import MazidiDomain
 import MazidiFoundations
+import MazidiPersistence
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  v3 backend-sync metadata rows (ADR-0012). Internal to the GRDB adapter (ADR-0007:
@@ -169,6 +170,67 @@ extension GRDBStore {
                     delivered_at = ?, opened_at = ?
                 WHERE id = ?
                 """, arguments: [state.rawValue, remoteID, serverVersion, relationshipID, deliveredAt, openedAt, key])
+        }
+    }
+}
+
+// MARK: - BackendSyncStore (ADR-0012 §3: transactional push-ack application)
+
+extension GRDBStore: BackendSyncStore {
+    public func applyPushResults(_ applications: [PushOutcomeApplication], at now: Date) async throws {
+        try await writer.write { db in
+            for application in applications {
+                switch application.outcome {
+                case let .acknowledged(remoteID, serverVersion):
+                    // Remove from replay: acknowledged, error cleared, no backoff.
+                    try db.execute(sql: """
+                        UPDATE outbox_operation
+                        SET status = 'acknowledged', last_error = NULL, next_attempt_at = NULL
+                        WHERE id = ?
+                        """, arguments: [application.operationID.uuidString])
+                    // Record the server version in the SAME transaction (idempotent upsert).
+                    try RemoteRecordRow(
+                        entityType: application.entityType,
+                        localId: application.localEntityID,
+                        remoteId: remoteID,
+                        serverVersion: serverVersion,
+                        tombstoned: false,
+                        lastSyncedAt: now
+                    ).save(db)
+                case let .deadLettered(reason):
+                    try db.execute(sql: """
+                        UPDATE outbox_operation
+                        SET status = 'rejected', last_error = ?, next_attempt_at = NULL
+                        WHERE id = ?
+                        """, arguments: [reason, application.operationID.uuidString])
+                case let .retry(nextAttemptAt, reason):
+                    try db.execute(sql: """
+                        UPDATE outbox_operation
+                        SET status = 'pending', last_error = ?, next_attempt_at = ?
+                        WHERE id = ?
+                        """, arguments: [reason, nextAttemptAt, application.operationID.uuidString])
+                }
+            }
+        }
+    }
+
+    public func loadSyncCursor(stream: String) async throws -> SyncCursorState? {
+        try await syncCursor(stream: stream).map {
+            SyncCursorState(token: $0.cursorToken, lastServerVersion: $0.lastServerVersion, schemaVersion: $0.schemaVersion)
+        }
+    }
+
+    public func saveSyncCursor(_ cursor: SyncCursorState, stream: String, at now: Date) async throws {
+        try await saveSyncCursor(SyncCursorRecord(
+            stream: stream, cursorToken: cursor.token,
+            lastServerVersion: cursor.lastServerVersion, schemaVersion: cursor.schemaVersion, updatedAt: now
+        ))
+    }
+
+    public func remoteRecordState(entityType: String, localID: String) async throws -> RemoteRecordState? {
+        try await remoteRecord(entityType: entityType, localID: localID).map {
+            RemoteRecordState(entityType: $0.entityType, localID: $0.localId, remoteID: $0.remoteId,
+                              serverVersion: $0.serverVersion, tombstoned: $0.tombstoned, lastSyncedAt: $0.lastSyncedAt)
         }
     }
 }
