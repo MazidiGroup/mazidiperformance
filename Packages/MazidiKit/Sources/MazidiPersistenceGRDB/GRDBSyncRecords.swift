@@ -233,4 +233,27 @@ extension GRDBStore: BackendSyncStore {
                               serverVersion: $0.serverVersion, tombstoned: $0.tombstoned, lastSyncedAt: $0.lastSyncedAt)
         }
     }
+
+    public func applyPullChanges(_ changes: [PulledChangeApplication], advancingCursorTo cursor: SyncCursorState, stream: String, at now: Date) async throws {
+        try await writer.write { db in
+            for change in changes {
+                // Track the pulled record's remote id / version / tombstone. Until the
+                // domain row is materialised (later CG), the remote id doubles as the local
+                // key; a save() is an idempotent upsert (re-applying a change is harmless).
+                try RemoteRecordRow(
+                    entityType: change.entityType,
+                    localId: change.remoteID,
+                    remoteId: change.remoteID,
+                    serverVersion: change.serverVersion,
+                    tombstoned: change.tombstoned,
+                    lastSyncedAt: now
+                ).save(db)
+            }
+            // Advance the cursor in the SAME transaction — never past un-applied changes.
+            try SyncCursorRecord(
+                stream: stream, cursorToken: cursor.token,
+                lastServerVersion: cursor.lastServerVersion, schemaVersion: cursor.schemaVersion, updatedAt: now
+            ).save(db)
+        }
+    }
 }

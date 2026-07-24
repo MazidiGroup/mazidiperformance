@@ -41,6 +41,23 @@ public struct SyncCursorState: Sendable, Equatable {
     public static let initial = SyncCursorState(token: nil, lastServerVersion: 0, schemaVersion: 1)
 }
 
+/// One accepted remote change to record when a pull batch is applied (CG5). The domain-row
+/// materialisation + conflict resolution extends this in later commit groups; here it tracks
+/// the remote id, server version, and tombstone flag.
+public struct PulledChangeApplication: Sendable, Equatable {
+    public let entityType: String
+    public let remoteID: String
+    public let serverVersion: Int
+    public let tombstoned: Bool
+
+    public init(entityType: String, remoteID: String, serverVersion: Int, tombstoned: Bool) {
+        self.entityType = entityType
+        self.remoteID = remoteID
+        self.serverVersion = serverVersion
+        self.tombstoned = tombstoned
+    }
+}
+
 /// One outbox operation's resolved push outcome, ready to persist.
 public struct PushOutcomeApplication: Sendable, Equatable {
     public enum Outcome: Sendable, Equatable {
@@ -77,4 +94,10 @@ public protocol BackendSyncStore: Sendable {
 
     /// Read a remote-record mapping (CG5).
     func remoteRecordState(entityType: String, localID: String) async throws -> RemoteRecordState?
+
+    /// Apply a pull batch in ONE transaction: record each accepted change's remote id /
+    /// server version / tombstone AND advance the cursor together (ADR-0012 §4). Either the
+    /// whole batch + the cursor advance land, or neither — the cursor never advances past
+    /// un-applied changes.
+    func applyPullChanges(_ changes: [PulledChangeApplication], advancingCursorTo cursor: SyncCursorState, stream: String, at now: Date) async throws
 }
