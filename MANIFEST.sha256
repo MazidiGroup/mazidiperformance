@@ -3,7 +3,7 @@ cf64a1b82199bac7a7faabe76d8e786b5b9fcfe6233fda2a4e15900bf9166729  ./.gitattribut
 ec0b414c547252ef5668b06194d3f79f671fb9f21c339262245e70b9b57756f6  ./.gitignore
 8d3e8829306e7e801347ce6528159e451ea010f1e389290f355acf7ded98ed21  ./App/Client/ClientRootView.swift
 7ee203a3644461c42dd17020cd0c26d25cadf145748fbb15031b2bf01c28cce8  ./App/Client/Model/ClientWorkoutModel.swift
-80191ba48c707b64f8ebf7096a10e7273e870f9db0d41f30967d874681a1da08  ./App/Client/Support/ClientEnvironment.swift
+de3ee2d560b51c9f29f8967c3497bb5156f9e9dc34c5c616ec8a833d02860b3d  ./App/Client/Support/ClientEnvironment.swift
 9f73d98c22b3dcd73b568815db0b7e554e391716f40ef2450191a453400703e7  ./App/Client/Support/ClientFixtures.swift
 1cd81847b01abbc0d4b5ea2b75295e2946d4b5df5bc7f9f240d601b0573a0e6b  ./App/Client/Views/ActiveWorkoutView.swift
 602d4273c5b579f89cf5f6115f01df89f5afacf20ab64e0cd4b9b849e404f7d6  ./App/Client/Views/ClientHomeView.swift
@@ -504,7 +504,7 @@ dc23aad45776703c9c2e7bfb02b002c066d326bb34e0a1985227b8f0751a246a  ./design/hando
 ad4b003febc25a16360b06ad3392a072af4bbc61f3d2c1bd7b0bad66a7ed2783  ./design/handoff-current/uploads/full-library-videos/dumbbell-row-bilateral.mp4
 21fc800aec2b6264c13974b0d94885b90537a8d339aa8e4303f0ec0086c34fe6  ./design/handoff-current/uploads/full-library-videos/kettlebell-sumo-deadlift.mp4
 6ce086ebe5a651ef5108ab797de13b5aaa139ae7bd86458bb642fffad4b01357  ./docs/ASSET_PIPELINE.md
-c6927b31cc968d0a8e1273d260e88a88bbed1ba8f083144b44ef9713cb7ffa8d  ./docs/BUILD_AND_TEST.md
+3d08c39912dfea50312cd9b1470536c21b8d4a67a118daea5c1822499645a12d  ./docs/BUILD_AND_TEST.md
 59c93ed81dc6315a6be6be7d9ac2a9fe91cbd8e51e9e2892b07aa955ef299f6e  ./docs/DECISION_LOG.md
 317db8ca7dc26437ab473cfc879179e0be514d4a2e5a755c9e1a1d4d9bf0b7fc  ./docs/KNOWN_ISSUES.md
 0c4fb1401a751a4537e66e6ea4415426caf4373bc8678d5388aa27ae2147fb1b  ./docs/PROJECT_STATUS.md
