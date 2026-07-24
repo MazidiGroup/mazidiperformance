@@ -1,0 +1,48 @@
+# XcodeGen manifest — run `xcodegen generate` on macOS (see docs/BUILD_AND_TEST.md).
+# The .xcodeproj is generated, never committed.
+name: MazidiPerformance
+options:
+  bundleIdPrefix: com.mazidigroup
+  deploymentTarget:
+    iOS: "17.0"   # DL-10: minimum version pending product confirmation
+  developmentLanguage: en
+packages:
+  MazidiKit:
+    path: Packages/MazidiKit
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    CODE_SIGN_STYLE: Automatic
+    # DEVELOPMENT_TEAM intentionally unset — no signing assets are committed (working rules)
+targets:
+  MazidiPerformance:
+    type: application
+    platform: iOS
+    sources:
+      - App
+    dependencies:
+      - package: MazidiKit
+        products: [MazidiFoundations, MazidiDomain, MazidiPersistence, MazidiSync, MazidiServices, MazidiNetworking]
+    info:
+      path: App/Info.plist
+      properties:
+        UILaunchScreen: {}
+        CFBundleDisplayName: Mazidi Performance
+        # Health/photo/calendar usage strings are added when those features land
+        # (phases 5/7) — permissions are off by default and never a prerequisite (8g).
+  MazidiPerformanceUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [UITests]
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+    dependencies:
+      - target: MazidiPerformance
+schemes:
+  MazidiPerformance:
+    build:
+      targets: { MazidiPerformance: all }
+    test:
+      targets: [MazidiPerformanceUITests]

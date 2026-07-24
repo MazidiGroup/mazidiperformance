@@ -1,0 +1,12 @@
+# Pin handoff fixtures and data files to LF so checkouts hash identically to the
+# documented SHA-256 values regardless of core.autocrlf (see VERIFICATION_REPORT.md §2).
+*.json text eol=lf
+*.csv text eol=lf
+*.html text eol=lf
+*.jsx text eol=lf
+*.js text eol=lf
+*.md text eol=lf
+*.swift text eol=lf
+*.yml text eol=lf
+*.webp binary
+*.mp4 binary

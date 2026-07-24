@@ -1,0 +1,265 @@
+[
+  {
+    "slug": "barbell-squat",
+    "displayName": "Barbell Squat",
+    "aliases": [
+      "Squat"
+    ],
+    "clientDescription": "The back-loaded barbell squat.",
+    "clientInstructions": [
+      "Set the bar in a rack at about chest height and step under it to rack it across your upper back.",
+      "Grip the bar slightly wider than shoulder width, brace your core, and step back from the rack.",
+      "Stand with feet shoulder-width apart, toes turned slightly out, and chest tall.",
+      "Push your hips back and down, bending the knees to squat down until your hips reach below the knees.",
+      "Drive through the full foot to stand back up, keeping the chest tall and bar path straight.",
+      "Lock out the hips and knees at the top, reset your breath and brace, and repeat for clean reps."
+    ],
+    "clientMistakes": [
+      "Letting the knees cave inward on the way up, which can increase stress around the knee and weakens the drive.",
+      "Cutting the depth short and not reaching at least parallel, missing the full quad and glute work.",
+      "Rounding the lower back at the bottom, which can make the position harder to control under load.",
+      "Shifting the bar weight onto the toes, which throws off the balance and can increase demand on the lower back."
+    ],
+    "clientBenefits": [
+      "Builds total lower-body strength led by the quads and glutes.",
+      "Trains core bracing and full-body stability under heavy load.",
+      "Reinforces the squat pattern that carries over to sport and daily life."
+    ],
+    "defaultCue": "Brace your trunk, keep your whole foot planted, and track your knees with your toes.",
+    "contentStatus": "draft_requires_human_review",
+    "reviewFlags": [
+      "marketing_or_hype_language"
+    ],
+    "posterFile": "posters/barbell-squat.webp",
+    "videoFile": "barbell-squat.mp4"
+  },
+  {
+    "slug": "barbell-bent-over-row",
+    "displayName": "Barbell Bent Over Row",
+    "aliases": [
+      "Bent Over Row"
+    ],
+    "clientDescription": "A heavy horizontal pull from a hinged position.",
+    "clientInstructions": [
+      "Stand with feet shoulder-width apart and grip the barbell with hands just outside your knees, palms facing you.",
+      "Hinge at your hips with a flat back until your torso is at about a 45-degree angle to the floor.",
+      "Brace your core hard and let the bar hang directly below your shoulders at full arm extension.",
+      "Pull the bar up to your lower chest, keeping your elbows tucked at about 45 degrees from your torso.",
+      "Squeeze your shoulder blades together at the top, fully contracting the lats and mid-back.",
+      "Lower the bar back down with control over 2 to 3 seconds, keeping the back position locked the whole time."
+    ],
+    "clientMistakes": [
+      "Standing too upright, turning the row into a partial deadlift instead of a back exercise.",
+      "Rounding the lower back as you pull, which increases demand on the lower back under load.",
+      "Pulling with the biceps and bending the wrists, leaving the lats and mid-back understimulated.",
+      "Using too much momentum and swinging the bar up — the back stops working when the body cheats."
+    ],
+    "clientBenefits": [
+      "Builds the lats, mid-back, and biceps under heavy compound load.",
+      "Trains the lower back and core to hold position under tension.",
+      "Balances out heavy bench pressing and protects shoulder control."
+    ],
+    "defaultCue": "Keep your ribs controlled and lead the movement with your elbows.",
+    "contentStatus": "draft_requires_human_review",
+    "reviewFlags": [
+      "marketing_or_hype_language",
+      "posture_or_correction_claim"
+    ],
+    "posterFile": "posters/barbell-bent-over-row.webp",
+    "videoFile": "barbell-bent-over-row.mp4"
+  },
+  {
+    "slug": "cable-seated-rope-face-pull",
+    "displayName": "Cable Seated Rope Face Pull",
+    "aliases": [
+      "Seated Rope Face Pull"
+    ],
+    "clientDescription": "A seated rope face pull that removes body english and isolates the rear delts and upper back.",
+    "clientInstructions": [
+      "Set the pulley above head height and attach a rope, then sit on a bench facing the cable stack.",
+      "Grip the rope with palms facing each other and arms extended forward at eye level with cable tension.",
+      "Sit tall with feet planted, brace your core, and start with no slack in the cable.",
+      "Pull the rope toward your forehead with elbows flaring wide and high, leading with the upper arms.",
+      "Separate the rope ends and squeeze the rear delts and upper back hard at the end of the pull.",
+      "Slowly let the rope travel back to the start over 2 seconds and repeat for 12 to 20 reps."
+    ],
+    "clientMistakes": [
+      "Pulling the rope toward the chin or chest, which turns the lift into a row.",
+      "Letting the elbows drop, swapping rear-delt work for biceps engagement.",
+      "Rounding the upper back as you pull, hiding the mid-back contraction.",
+      "Loading too heavy and shrugging the traps up, hiding the rear delts under upper-trap dominance."
+    ],
+    "clientBenefits": [
+      "Isolates the rear delts in a locked-in seated position.",
+      "Reinforces healthy shoulder posture for desk workers and lifters.",
+      "Strengthens the small stabilizers around the shoulder blade for joint health."
+    ],
+    "defaultCue": "Keep your ribs controlled and lead the movement with your elbows.",
+    "contentStatus": "draft_requires_human_review",
+    "reviewFlags": [],
+    "posterFile": "posters/cable-seated-rope-face-pull.webp",
+    "videoFile": "cable-seated-rope-face-pull.mp4"
+  },
+  {
+    "slug": "band-wood-chopper",
+    "displayName": "Band Wood Chopper",
+    "aliases": [
+      "Wood Chopper"
+    ],
+    "clientDescription": "A diagonal band chop that trains rotational power through the obliques and the entire core.",
+    "clientInstructions": [
+      "Anchor a band at shoulder height or slightly above on your left side and stand perpendicular to the anchor.",
+      "Grip the handle with both hands and step away until the band has tension across your body.",
+      "Pull the handle down and across your body toward your right hip, rotating through the torso.",
+      "Pivot your left foot as you rotate, fully turning the trunk to load the obliques explosively.",
+      "Slowly return to the starting position over 2 to 3 seconds, fighting the band's pull the whole way.",
+      "Complete 8 to 12 reps per side, then switch the anchor and work the opposite direction."
+    ],
+    "clientMistakes": [
+      "Pulling with the arms instead of rotating through the trunk — turns the move into a one-arm row.",
+      "Skipping the foot pivot, which limits the rotation range and stresses the lower back.",
+      "Going too heavy and breaking form — the chop should look athletic and controlled, not rushed.",
+      "Forgetting to work both sides equally, leaving the trunk imbalanced for rotational sport."
+    ],
+    "clientBenefits": [
+      "Builds rotational power for golf, tennis, baseball, and combat sports.",
+      "Strengthens the obliques and entire trunk in a single athletic pattern.",
+      "Improves core control under rotation, reducing loss of control in dynamic sports."
+    ],
+    "defaultCue": "Rotate through the trunk under control without forcing the end range.",
+    "contentStatus": "draft_requires_human_review",
+    "reviewFlags": [
+      "medical_or_rehab_claim"
+    ],
+    "posterFile": "posters/band-wood-chopper.webp",
+    "videoFile": "band-wood-chopper.mp4"
+  },
+  {
+    "slug": "barbell-high-incline-bench-press",
+    "displayName": "Barbell High Incline Bench Press",
+    "aliases": [
+      "High Incline Bench Press"
+    ],
+    "clientDescription": "A steep-incline barbell press around 60 degrees that pushes most of the load into the upper chest and front shoulders.",
+    "clientInstructions": [
+      "Set the bench to a steep incline of around 60 degrees and lie back with your feet planted flat.",
+      "Grip the bar slightly wider than shoulder width and pull your shoulder blades back into the pad.",
+      "Unrack the bar to full arm extension and stack the wrists directly over the elbows.",
+      "Lower the bar slowly to the upper chest, just below the collarbone, with elbows tracking under the bar.",
+      "Pause briefly with the bar at the chest, keeping core tension and a tight upper back.",
+      "Press the bar back up along the same path until the arms are fully locked out over the upper chest."
+    ],
+    "clientMistakes": [
+      "Setting too steep an angle near vertical, which turns the lift into an overhead press and loses chest involvement.",
+      "Lowering the bar to the lower chest like a flat bench, which can increase stress on the shoulders at this angle.",
+      "Flaring the elbows wide, which loads the front of the shoulders instead of the upper chest.",
+      "Lifting the hips off the bench to cheat the press, which ruins the angle and can increase demand on the lower back."
+    ],
+    "clientBenefits": [
+      "Builds upper-chest size that fills out the top of the torso.",
+      "Strengthens the front shoulders for better overhead press carryover.",
+      "Adds a fresh pressing angle that breaks plateaus on flat bench."
+    ],
+    "defaultCue": "Set your shoulders, brace your trunk, and press through a controlled path.",
+    "contentStatus": "draft_requires_human_review",
+    "reviewFlags": [],
+    "posterFile": "posters/barbell-high-incline-bench-press.webp",
+    "videoFile": "barbell-high-incline-bench-press.mp4"
+  },
+  {
+    "slug": "dumbbell-row-bilateral",
+    "displayName": "Dumbbell Row Bilateral",
+    "aliases": [
+      "Row Bilateral"
+    ],
+    "clientDescription": "A bent-over two-dumbbell row that hammers the lats, mid-back, and biceps.",
+    "clientInstructions": [
+      "Stand with a dumbbell in each hand, feet hip-width apart, and a slight bend in the knees.",
+      "Hinge at the hips until the torso is at about a 45 degree angle, keeping the back flat and the chest proud.",
+      "Let both dumbbells hang straight down beneath the shoulders, palms facing each other.",
+      "Pull both dumbbells up to the ribs at the same time, driving the elbows back toward the ceiling.",
+      "Squeeze the shoulder blades together at the top with the dumbbells touching the lower-rib line.",
+      "Lower both dumbbells under control over 2 to 3 seconds back to the fully extended hanging position."
+    ],
+    "clientMistakes": [
+      "Standing too upright, which turns the row into a high pull and removes the lat engagement.",
+      "Rounding the lower back at the hinge, which loads the spine instead of the working muscles.",
+      "Yanking the dumbbells up with momentum instead of pulling cleanly with the back.",
+      "Letting the elbows flare wide, which shifts work off the lats onto the rear delts only."
+    ],
+    "clientBenefits": [
+      "Builds back thickness through the lats and mid-back together.",
+      "Develops biceps strength alongside the rowing pattern.",
+      "Reinforces hinge bracing and core stability under load."
+    ],
+    "defaultCue": "Keep your ribs controlled and lead the movement with your elbows.",
+    "contentStatus": "draft_requires_human_review",
+    "reviewFlags": [],
+    "posterFile": "posters/dumbbell-row-bilateral.webp",
+    "videoFile": "dumbbell-row-bilateral.mp4"
+  },
+  {
+    "slug": "kettlebell-sumo-deadlift",
+    "displayName": "Kettlebell Sumo Deadlift",
+    "aliases": [
+      "Sumo Deadlift"
+    ],
+    "clientDescription": "A wide-stance kettlebell deadlift that loads the glutes, quads, and lower back from a tall, upright torso.",
+    "clientInstructions": [
+      "Stand with feet wider than shoulder width and toes turned out about 30 degrees.",
+      "Set the kettlebell on the floor between your feet, directly under your hips.",
+      "Hinge at the hips, bend the knees, and grip the kettlebell handle with both hands.",
+      "Brace your core, lift your chest, and flatten your back into a strong starting position.",
+      "Drive through your heels to stand up tall, finishing with squeezed glutes and locked-out hips.",
+      "Lower the kettlebell back to the floor under control by hinging the hips back and bending the knees."
+    ],
+    "clientMistakes": [
+      "Letting the knees cave inward on the way up, which loads the joints instead of the glutes.",
+      "Rounding the lower back at the bottom of the lift, which can increase stress on the spine.",
+      "Pulling with the arms instead of driving the floor away with the legs.",
+      "Hyperextending the lower back at lockout instead of standing tall with squeezed glutes."
+    ],
+    "clientBenefits": [
+      "Builds glute and quad size from a beginner-friendly deadlift position.",
+      "Teaches the deadlift pattern with less stress on the lower back.",
+      "Trains full-body bracing and grip strength under load."
+    ],
+    "defaultCue": "Push your hips back, keep the load close, and move through a range you can control.",
+    "contentStatus": "draft_requires_human_review",
+    "reviewFlags": [],
+    "posterFile": "posters/kettlebell-sumo-deadlift.webp",
+    "videoFile": "kettlebell-sumo-deadlift.mp4"
+  },
+  {
+    "slug": "barbell-rack-pull",
+    "displayName": "Barbell Rack Pull",
+    "aliases": [
+      "Rack Pull"
+    ],
+    "clientDescription": "A partial deadlift pulled from a raised pin position.",
+    "clientInstructions": [
+      "Set the safety pins in a rack at about knee height and load the bar to your working weight.",
+      "Stand with feet hip-width apart, bar over mid-foot, and grip just outside the knees.",
+      "Pull the slack out of the bar, brace the core, and pull the chest up tall with a flat back.",
+      "Drive the floor away with your legs while keeping the bar dragging close to your thighs.",
+      "Stand fully tall by squeezing the glutes and locking out the hips and knees together.",
+      "Lower the bar back to the pins under control, reset your breath, and repeat for clean reps."
+    ],
+    "clientMistakes": [
+      "Setting the pins too low or too high, which removes the partial-lift benefit and risks form breakdown.",
+      "Rounding the upper back hard to grind the rep, which can increase stress on the spine under heavy load.",
+      "Hyperextending at the top instead of finishing with a tight glute squeeze and stacked rib cage.",
+      "Bouncing the bar off the pins and using momentum instead of resetting between reps."
+    ],
+    "clientBenefits": [
+      "Builds upper-back and trap thickness with heavier loads than full deadlifts.",
+      "Strengthens the deadlift lockout for stronger pulls overall.",
+      "Teaches the hinge pattern through a shorter, easier range."
+    ],
+    "defaultCue": "Push your hips back, keep the load close, and move through a range you can control.",
+    "contentStatus": "draft_requires_human_review",
+    "reviewFlags": [],
+    "posterFile": "posters/barbell-rack-pull.webp",
+    "videoFile": "barbell-rack-pull.mp4"
+  }
+]

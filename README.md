@@ -1,21 +1,29 @@
 # Mazidi Performance
 
-Current product-design and exercise-content handoff for the Mazidi Performance iOS coaching platform.
+Subscription-based iOS platform for independent personal trainers and online coaches. Native Swift/SwiftUI.
+
+## Approved design baseline
+
+- **Handoff:** `design/handoff-current/` — 110 design panels (turns 1–14), tag `design-handoff-v1.0.0`, merge commit `c92ecb5`.
+- Open `design/handoff-current/Mazidi Performance.dc.html` in a browser; panels are anchor-addressable (e.g. `#10d`).
+- Documentation set: `design/handoff-current/handoff/` (screen inventory, design tokens, functional rules, state machines, accessibility QA, asset/CDN integration).
+- Integrity hashes: `design/handoff-current/handoff/README.md` §Integrity manifest and `MANIFEST.sha256`.
 
 ## Repository contents
 
-- `design/prototype-dark-mode-current/` — latest verified dark-mode prototype source (72 panels), support files, 412 exercise posters, 12 representative MP4 clips and the 206-record source metadata.
-- `content/exercises/client-layer/` — draft neutral client-facing content keyed by the source exercise slugs, supplied as JSON and CSV for review.
-- `docs/PROJECT_STATUS.md` — current design status, build readiness and remaining batches.
-- `docs/ASSET_PIPELINE.md` — recommended handling for the full animation library and metadata.
-- `MANIFEST.sha256` — file-integrity hashes.
+- `App/` + `project.yml` — iOS app target (generate the Xcode project with `xcodegen generate` on macOS).
+- `Packages/MazidiKit/` — platform-neutral domain/services/sync/persistence package (builds and tests on macOS/Linux/Windows).
+- `content/exercises/client-layer/` — draft client-facing exercise content (206 records, **pending fitness-professional review** — 101 flagged).
+- `design/handoff-current/` — the approved design handoff (do not modify).
+- `docs/` — verification report, architecture, ADRs, risk register, decision log, roadmap, build/test commands.
 
-## Open the design
+## Start here
 
-Open `design/prototype-dark-mode-current/Mazidi Performance.dc.html` with its sibling files and `uploads/` directory kept in the same relative structure.
+1. `docs/audit/VERIFICATION_REPORT.md` — baseline verification and repo state
+2. `docs/architecture/ARCHITECTURE.md` + `docs/architecture/adr/`
+3. `docs/ROADMAP.md` and `docs/VERTICAL_SLICE_1.md`
+4. `docs/BUILD_AND_TEST.md` — build/test commands and current verification status
 
-## Important content status
+## Content status
 
-The 12 MP4 clips in this repository are representative design/development fixtures, not the full production animation library. The full library should be ingested by the developer/content pipeline and hosted in application storage or a CDN. It should not be committed to this repository as a large binary archive.
-
-The client-content layer is a generated draft. It preserves stable slugs and asset references but requires editorial review before production publication.
+The 12 MP4 clips are representative dev fixtures; the full 206-clip library ships via the content/CDN pipeline (`handoff/asset-cdn-integration.md`). The client-content layer is a draft: every record is `draft_requires_human_review` and renders with a "DRAFT COPY · PENDING REVIEW" badge until review completes.
