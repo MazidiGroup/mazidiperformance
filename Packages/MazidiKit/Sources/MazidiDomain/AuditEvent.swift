@@ -22,6 +22,8 @@ public struct AuditEvent: Sendable, Codable, Equatable {
         case dataExportRequested
         case accountDeletionRequested
         case remoteSignOut
+        /// Local sign-out on this device (ADR-0008 sign-out sequence).
+        case signedOut
         case sensitiveRecordAccessed
         case alertAcknowledged
         case alertResolved
