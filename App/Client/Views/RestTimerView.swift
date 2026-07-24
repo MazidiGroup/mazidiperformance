@@ -7,6 +7,7 @@ import SwiftUI
 struct RestTimerView: View {
     @Bindable var model: ClientWorkoutModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     private var duration: Int { max(model.restTimer?.durationSeconds ?? 1, 1) }
     private var progress: Double {
@@ -15,8 +16,13 @@ struct RestTimerView: View {
     }
 
     var body: some View {
+        // At accessibility type sizes the row restacks vertically (14c) so the ring and
+        // the full-width controls each get the whole card width.
+        let layout = typeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(spacing: MazidiMetric.stackSpacing))
+            : AnyLayout(HStackLayout(spacing: MazidiMetric.stackSpacing))
         MazidiCard {
-            HStack(spacing: MazidiMetric.stackSpacing) {
+            layout {
                 countdown
                 controls
             }
@@ -41,6 +47,11 @@ struct RestTimerView: View {
             Text("\(model.restRemaining)")
                 .font(MazidiFont.timerDisplay)
                 .foregroundStyle(MazidiColor.text)
+                // Keep the digits inside the ring at every type size — the seconds also
+                // read out via accessibilityValue, so scaling here loses nothing (14c).
+                .lineLimit(1)
+                .minimumScaleFactor(0.4)
+                .padding(14)
         }
         .frame(width: 92, height: 92)
         .accessibilityElement(children: .ignore)

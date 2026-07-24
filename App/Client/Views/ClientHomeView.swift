@@ -8,6 +8,7 @@ struct ClientHomeView: View {
     let onViewWorkout: () -> Void
     let onResume: () -> Void
     let onViewSummary: () -> Void
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         ScrollView {
@@ -37,12 +38,17 @@ struct ClientHomeView: View {
     }
 
     private var header: some View {
-        HStack {
+        // Title and sync badge restack at accessibility sizes so the badge keeps a full
+        // line instead of wrapping mid-word beside the title (14c).
+        let layout = typeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: MazidiMetric.tightSpacing))
+            : AnyLayout(HStackLayout())
+        return layout {
             Text("Your session")
                 .font(MazidiFont.screenTitle)
                 .foregroundStyle(MazidiColor.text)
                 .accessibilityAddTraits(.isHeader)
-            Spacer()
+            if !typeSize.isAccessibilitySize { Spacer() }
             SyncStatusView(sync: model.sync)
         }
     }

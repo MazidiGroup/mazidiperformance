@@ -8,6 +8,7 @@ struct WorkoutOverviewView: View {
     @Bindable var model: ClientWorkoutModel
     let onBegin: () -> Void
     let onOpenExercise: (AssignedExercise) -> Void
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         ScrollView {
@@ -48,7 +49,12 @@ struct WorkoutOverviewView: View {
                     Text(PrescriptionFormat.summary(exercise.prescription))
                         .font(MazidiFont.callout)
                         .foregroundStyle(MazidiColor.textSecondary)
-                    HStack(spacing: 6) {
+                    // Badges restack vertically at accessibility sizes (14c) — side by side
+                    // they degrade into unreadable one-character columns.
+                    let badgeLayout = typeSize.isAccessibilitySize
+                        ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6))
+                        : AnyLayout(HStackLayout(spacing: 6))
+                    badgeLayout {
                         if !exercise.approvedAlternatives.isEmpty {
                             StatusBadge(kind: .info, label: "Swap available", systemImage: "arrow.triangle.2.circlepath")
                         }
