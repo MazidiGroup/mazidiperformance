@@ -10,7 +10,17 @@ Registered in code in `Packages/MazidiKit/Sources/MazidiPersistenceGRDB/GRDBSche
   file like an unopenable database (below). The original file is preserved.
 - **Corruption / unopenable database:** the factory moves the file (plus `-wal`/`-shm`
   side files) to `<name>.corrupt-<UTC timestamp>` next to the original — preserved for
-  diagnostics, never silently deleted — logs the event, and starts a fresh database.
+  diagnostics and future recovery, never deleted or overwritten — logs only the file path
+  and failure category (never workout contents), and starts a fresh database. The outcome
+  is a **typed recovery signal** (`GRDBStore.recovery`): `normal(createdNew:)`
+  distinguishes a genuine first launch from reopening existing data, and
+  `recoveredAfterQuarantine(quarantinedPath:reason:)` (reason: `unopenable` or
+  `migrationFailed`) marks a fresh replacement database. The composition root maps this to
+  `ClientEnvironment.StoreHealth` and the Today screen surfaces quarantine/fallback states
+  — a fresh-after-quarantine database is never presented as a normal empty state.
+  **Deferred until account/support/export UI exists:** user-driven retrieval or export of
+  a quarantined file, support tooling around it, and any repair attempt (no speculative
+  repair engine); tracked as KNOWN_ISSUES L5.
 - **Location:** `Application Support/MazidiPerformance/mazidi-client.sqlite` (created with
   intermediate directories). One database per signed-in identity is the target design;
   until authentication exists (R-01) there is a single local database. On iOS the file is

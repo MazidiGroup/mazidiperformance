@@ -371,19 +371,72 @@ private func makeService(store: GRDBStore, clock: FixedClock) -> WorkoutSessionS
         #expect(applied == ["v1-workout-persistence", "v2-test-fixture"])
     }
 
-    @Test func unopenableDatabaseIsPreservedAsideAndReplacedFresh() async throws {
+    // MARK: Recovery signal — the four conditions are typed and distinguishable
+
+    @Test func firstLaunchAndNormalReopenReportDistinctNormalConditions() async throws {
+        let dir = temporaryStoreDirectory()
+        // Genuine first launch: no file existed → normal(createdNew: true).
+        do {
+            let store = try GRDBStore.open(directory: dir)
+            #expect(store.recovery == .normal(createdNew: true))
+        }
+        // Reopening existing data is NOT a first launch → normal(createdNew: false).
+        do {
+            let store = try GRDBStore.open(directory: dir)
+            #expect(store.recovery == .normal(createdNew: false))
+        }
+    }
+
+    @Test func unopenableDatabaseIsQuarantinedAndReportedNeverSilentlyEmpty() async throws {
         let dir = temporaryStoreDirectory()
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let url = dir.appendingPathComponent("mazidi-client.sqlite")
-        // Not a database: opening/migrating must fail, triggering the policy.
-        try Data("this is not a sqlite database".utf8).write(to: url)
+        // Not a database: opening must fail, triggering the quarantine policy.
+        let originalBytes = Data("this is not a sqlite database".utf8)
+        try originalBytes.write(to: url)
 
         let store = try GRDBStore.open(directory: dir)
         #expect(try await store.resumableSession() == nil) // fresh, usable database
 
-        // The damaged file was preserved (renamed), never silently deleted.
+        // The condition is typed — a fresh-after-quarantine store is never .normal.
+        guard case let .recoveredAfterQuarantine(quarantinedPath, reason) = store.recovery else {
+            Issue.record("Expected recoveredAfterQuarantine, got \(store.recovery)")
+            return
+        }
+        #expect(reason == .unopenable)
+        #expect(quarantinedPath.contains(".corrupt-"))
+
+        // The quarantined file was preserved byte-for-byte, never deleted/overwritten.
+        #expect(try Data(contentsOf: URL(fileURLWithPath: quarantinedPath)) == originalBytes)
         let contents = try FileManager.default.contentsOfDirectory(atPath: dir.path)
-        #expect(contents.contains { $0.contains(".corrupt-") })
         #expect(contents.contains("mazidi-client.sqlite"))
+
+        // A later relaunch of the fresh replacement is normal again (existing data).
+        let reopened = try GRDBStore.open(directory: dir)
+        #expect(reopened.recovery == .normal(createdNew: false))
+    }
+
+    @Test func migrationFailureIsQuarantinedWithTheMigrationCategory() async throws {
+        let dir = temporaryStoreDirectory()
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent("mazidi-client.sqlite")
+        // A VALID SQLite file whose contents make the v1 migration fail (table name
+        // collision) — opens fine, migrate throws → category .migrationFailed.
+        let sabotage = try DatabaseQueue(path: url.path)
+        try await sabotage.write { db in
+            try db.execute(sql: "CREATE TABLE workout_session (wrong TEXT)")
+        }
+
+        let store = try GRDBStore.open(directory: dir)
+        guard case let .recoveredAfterQuarantine(quarantinedPath, reason) = store.recovery else {
+            Issue.record("Expected recoveredAfterQuarantine, got \(store.recovery)")
+            return
+        }
+        #expect(reason == .migrationFailed)
+        #expect(FileManager.default.fileExists(atPath: quarantinedPath))
+        // The replacement is fully migrated and usable.
+        #expect(try await store.resumableSession() == nil)
+        try await store.enqueue(op(aggregate: UUID(), seq: 0))
+        #expect(try await store.pendingOperations().count == 1)
     }
 }

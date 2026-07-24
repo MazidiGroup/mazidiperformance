@@ -44,10 +44,27 @@ typealias ClientStore =
 /// receive everything through this object, never reaching for globals.
 @MainActor
 final class ClientEnvironment {
+    /// Typed health of the store this launch (from GRDBStore.RecoveryCondition). The UI
+    /// must consume this so a fresh-after-quarantine or fallback store is never presented
+    /// as a normal empty state.
+    enum StoreHealth: Equatable {
+        /// Durable database opened normally — genuine first launch or existing data.
+        case durable
+        /// A damaged database was quarantined (preserved at the path, never deleted) and
+        /// this launch runs on a fresh replacement. Must be surfaced to the user.
+        case recoveredAfterQuarantine(quarantinedPath: String)
+        /// DEBUG-only intentional ephemeral store (UI tests, previews). Expected; silent.
+        case intentionallyEphemeral
+        /// The durable store was unrecoverable this launch; running in-memory. Workouts
+        /// recorded now will NOT survive relaunch — must be surfaced to the user.
+        case ephemeralFallback
+    }
+
     let clock: any AppClock
     let content: any ExerciseContentProviding
     let media: any MediaResolving
     let assignedWorkout: AssignedWorkout
+    let storeHealth: StoreHealth
 
     private let store: ClientStore
     private let transport: FixtureSyncTransport
@@ -68,7 +85,8 @@ final class ClientEnvironment {
         self.media = media
         self.assignedWorkout = assignedWorkout
 
-        let resolvedStore = store ?? Self.makeStore()
+        let (resolvedStore, health) = store.map { ($0, StoreHealth.durable) } ?? Self.makeStore()
+        self.storeHealth = health
         let transport = FixtureSyncTransport()
         self.store = resolvedStore
         self.transport = transport
@@ -86,16 +104,16 @@ final class ClientEnvironment {
     /// - `MAZIDI_STORE_DIR=<path>` — durable database at an explicit directory (the
     ///   relaunch-restoration UI test uses a unique temp directory).
     /// Neither override is compiled into Release builds.
-    private static func makeStore() -> ClientStore {
+    private static func makeStore() -> (ClientStore, StoreHealth) {
         let log = AppLog(category: "persistence")
         #if DEBUG
         let env = ProcessInfo.processInfo.environment
         if env["MAZIDI_STORE_MODE"] == "ephemeral", let ephemeral = try? GRDBStore.inMemory() {
-            return ephemeral
+            return (ephemeral, .intentionallyEphemeral)
         }
         if let dir = env["MAZIDI_STORE_DIR"],
            let relocated = try? GRDBStore.open(directory: URL(fileURLWithPath: dir, isDirectory: true)) {
-            return relocated
+            return (relocated, Self.health(of: relocated))
         }
         #endif
         do {
@@ -103,15 +121,26 @@ final class ClientEnvironment {
                 for: .applicationSupportDirectory, in: .userDomainMask,
                 appropriateFor: nil, create: true
             )
-            return try GRDBStore.open(
+            let store = try GRDBStore.open(
                 directory: base.appendingPathComponent("MazidiPerformance", isDirectory: true)
             )
+            return (store, Self.health(of: store))
         } catch {
             // Unrecoverable open failure (the corrupt-file policy already ran and the
             // damaged files are preserved on disk — MIGRATIONS.md). Keep this launch
-            // usable with a clearly-logged in-memory store; nothing is deleted.
+            // usable with an in-memory store, and surface the condition — never a
+            // silent empty state.
             log.error("Durable store unavailable (\(error)); running in-memory for this launch")
-            return InMemorySyncStore()
+            return (InMemorySyncStore(), .ephemeralFallback)
+        }
+    }
+
+    private static func health(of store: GRDBStore) -> StoreHealth {
+        switch store.recovery {
+        case .normal:
+            return .durable
+        case let .recoveredAfterQuarantine(quarantinedPath, _):
+            return .recoveredAfterQuarantine(quarantinedPath: quarantinedPath)
         }
     }
 

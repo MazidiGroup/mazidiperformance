@@ -70,6 +70,10 @@ final class ClientWorkoutModel {
     func content(for slug: ExerciseSlug) -> ExerciseContent? { env.content.content(for: slug) }
     var media: any MediaResolving { env.media }
 
+    /// Store health this launch — the Today screen surfaces quarantine/fallback states
+    /// so a fresh-after-recovery database never masquerades as a normal empty state.
+    var storeHealth: ClientEnvironment.StoreHealth { env.storeHealth }
+
     /// The slug actually being performed for an exercise (differs after an approved swap).
     func performedSlug(for exercise: AssignedExercise) -> ExerciseSlug {
         session?.swaps[exercise.id] ?? exercise.slug

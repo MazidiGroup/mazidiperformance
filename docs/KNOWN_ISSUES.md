@@ -112,6 +112,21 @@ additional UI/integration coverage for slice 1.
 - **Acceptance:** the player is held in `@State` (built once); Reduce Motion full-screen playback
   still works (no autoplay/loop) and is verified in the simulator.
 
+### L5 — Quarantined-database retrieval waits on support/export UI
+- **Where:** `GRDBStore.open` corruption policy (MIGRATIONS.md); Today's
+  `store_recovery_notice`.
+- **Impact:** A damaged database is preserved as `.corrupt-<timestamp>` and the client is
+  told honestly that data was set aside — but there is no in-app way yet to export the
+  quarantined file or hand it to support, and no repair attempt is made (deliberately —
+  no speculative repair engine).
+- **Why not fixed now:** Retrieval/export belongs to the account/support/export surface
+  (turn 13g), which does not exist yet; building it ad hoc here would fabricate flows the
+  design hasn't approved.
+- **Owning milestone:** account/privacy settings slice (turn 13).
+- **Acceptance:** a support/export path can surface and transmit the quarantined file with
+  the user's consent, after which this notice links to it; quarantined files remain
+  preserved untouched until then.
+
 ### L4 — Missing UI coverage for the swap and offline→synced journeys
 - **Where:** `UITests/ClientWorkoutUITests.swift` (covers open / record / pause+resume /
   complete / debug-gating; not swap or connectivity transitions).

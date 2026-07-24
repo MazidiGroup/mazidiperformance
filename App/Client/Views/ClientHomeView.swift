@@ -15,6 +15,8 @@ struct ClientHomeView: View {
             VStack(alignment: .leading, spacing: MazidiMetric.stackSpacing) {
                 header
 
+                storeRecoveryNotice
+
                 switch model.today {
                 case .loading:
                     loading
@@ -50,6 +52,39 @@ struct ClientHomeView: View {
                 .accessibilityAddTraits(.isHeader)
             if !typeSize.isAccessibilitySize { Spacer() }
             SyncStatusView(sync: model.sync)
+        }
+    }
+
+    /// Honest storage-recovery states (MIGRATIONS.md): a fresh database after quarantine
+    /// or an in-memory fallback must never present as a normal empty Today. Colour is
+    /// never the only signal — icon + label + text. Retrieval of a quarantined file waits
+    /// on the support/export flow (KNOWN_ISSUES L5).
+    @ViewBuilder private var storeRecoveryNotice: some View {
+        switch model.storeHealth {
+        case .durable, .intentionallyEphemeral:
+            EmptyView()
+        case .recoveredAfterQuarantine:
+            MazidiCard {
+                VStack(alignment: .leading, spacing: MazidiMetric.tightSpacing) {
+                    StatusBadge(kind: .warning, label: "Storage recovered", systemImage: "externaldrive.badge.exclamationmark")
+                    Text("Your previous workout data couldn't be read, so it was set aside safely — nothing was deleted — and you're starting with fresh storage. Support can help recover the saved file.")
+                        .font(MazidiFont.callout)
+                        .foregroundStyle(MazidiColor.text)
+                }
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("store_recovery_notice")
+        case .ephemeralFallback:
+            MazidiCard {
+                VStack(alignment: .leading, spacing: MazidiMetric.tightSpacing) {
+                    StatusBadge(kind: .danger, label: "Storage unavailable", systemImage: "externaldrive.badge.xmark")
+                    Text("Workout storage couldn't be opened. You can still train, but workouts recorded right now won't survive closing the app.")
+                        .font(MazidiFont.callout)
+                        .foregroundStyle(MazidiColor.text)
+                }
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("store_recovery_notice")
         }
     }
 

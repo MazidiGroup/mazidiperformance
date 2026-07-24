@@ -14,6 +14,30 @@ import MazidiSync
 /// test-only failure hook, guarded by a lock (hence `@unchecked Sendable`).
 public final class GRDBStore: @unchecked Sendable {
     let writer: any DatabaseWriter
+
+    /// How this store came to exist — the typed recovery signal the composition boundary
+    /// must consume so a fresh-after-quarantine database is never presented as a genuine
+    /// empty state (MIGRATIONS.md corruption policy).
+    public let recovery: RecoveryCondition
+
+    /// Why a previous database file could not be used.
+    public enum FailureCategory: String, Sendable, Equatable {
+        /// The file could not be opened as a SQLite database at all.
+        case unopenable
+        /// The file opened but a schema migration failed.
+        case migrationFailed
+    }
+
+    public enum RecoveryCondition: Sendable, Equatable {
+        /// The database opened normally. `createdNew` distinguishes a genuine first
+        /// launch (no file existed) from reopening existing data.
+        case normal(createdNew: Bool)
+        /// The previous database could not be opened or migrated. It was preserved —
+        /// never deleted or overwritten — at `quarantinedPath`, and this store is a
+        /// fresh replacement. Callers MUST surface this; it is not an empty state.
+        case recoveredAfterQuarantine(quarantinedPath: String, reason: FailureCategory)
+    }
+
     private let hookLock = NSLock()
     private var _atomicWriteHook: (@Sendable () throws -> Void)?
 
@@ -30,8 +54,9 @@ public final class GRDBStore: @unchecked Sendable {
         return _atomicWriteHook
     }
 
-    init(writer: any DatabaseWriter) {
+    init(writer: any DatabaseWriter, recovery: RecoveryCondition = .normal(createdNew: false)) {
         self.writer = writer
+        self.recovery = recovery
     }
 
     // MARK: - Opening (factory + corruption policy, MIGRATIONS.md)
@@ -45,8 +70,12 @@ public final class GRDBStore: @unchecked Sendable {
     /// Open (or create) the durable store at `directory/filename`, applying migrations.
     /// Policy (MIGRATIONS.md): if opening or migrating fails, the damaged file and its
     /// WAL side files are moved to `<filename>.corrupt-<UTC timestamp>` — preserved for
-    /// diagnostics, never deleted — and a fresh database is created. A second failure is
-    /// unrecoverable and thrown to the caller.
+    /// diagnostics and future support/export recovery, never deleted or overwritten —
+    /// and a fresh database is created. The outcome is reported as the store's typed
+    /// `recovery` condition; a second failure is unrecoverable and thrown.
+    ///
+    /// Logging deliberately records only the file path and failure category — never
+    /// workout contents.
     public static func open(
         directory: URL,
         filename: String = "mazidi-client.sqlite",
@@ -55,14 +84,23 @@ public final class GRDBStore: @unchecked Sendable {
         let fm = FileManager.default
         try fm.createDirectory(at: directory, withIntermediateDirectories: true)
         let url = directory.appendingPathComponent(filename)
+        let existedBefore = fm.fileExists(atPath: url.path)
 
         do {
-            return GRDBStore(writer: try makePool(at: url))
-        } catch {
-            log.error("Opening \(filename) failed (\(error)); preserving file aside and starting fresh")
-            setAside(url, fileManager: fm, log: log)
+            let pool = try makePool(at: url)
+            return GRDBStore(writer: pool, recovery: .normal(createdNew: !existedBefore))
+        } catch let failure as PoolCreationError {
+            log.error("Database at \(url.lastPathComponent) failed (\(failure.category.rawValue)); quarantining and starting fresh")
+            let quarantinedPath = setAside(url, fileManager: fm, log: log)
             do {
-                return GRDBStore(writer: try makePool(at: url))
+                let pool = try makePool(at: url)
+                return GRDBStore(
+                    writer: pool,
+                    recovery: .recoveredAfterQuarantine(
+                        quarantinedPath: quarantinedPath ?? url.path,
+                        reason: failure.category
+                    )
+                )
             } catch {
                 throw OpenError.unrecoverable(underlying: error)
             }
@@ -73,11 +111,22 @@ public final class GRDBStore: @unchecked Sendable {
     public static func inMemory() throws -> GRDBStore {
         let queue = try DatabaseQueue()
         try GRDBSchema.migrator().migrate(queue)
-        return GRDBStore(writer: queue)
+        return GRDBStore(writer: queue, recovery: .normal(createdNew: true))
+    }
+
+    /// Wraps pool-creation failures with the category the recovery signal reports.
+    private struct PoolCreationError: Error {
+        let category: FailureCategory
+        let underlying: Error
     }
 
     private static func makePool(at url: URL) throws -> DatabasePool {
-        let pool = try DatabasePool(path: url.path)
+        let pool: DatabasePool
+        do {
+            pool = try DatabasePool(path: url.path)
+        } catch {
+            throw PoolCreationError(category: .unopenable, underlying: error)
+        }
         #if os(iOS)
         // iOS Data Protection (ADR-0002): complete-until-first-unlock so background sync
         // can run after reboot. Best-effort assertion of the class we document — iOS
@@ -90,22 +139,30 @@ public final class GRDBStore: @unchecked Sendable {
             )
         }
         #endif
-        try GRDBSchema.migrator().migrate(pool)
+        do {
+            try GRDBSchema.migrator().migrate(pool)
+        } catch {
+            throw PoolCreationError(category: .migrationFailed, underlying: error)
+        }
         return pool
     }
 
-    private static func setAside(_ url: URL, fileManager fm: FileManager, log: AppLog) {
+    /// Returns the quarantined main-file path (nil if nothing could be preserved).
+    private static func setAside(_ url: URL, fileManager fm: FileManager, log: AppLog) -> String? {
         let stamp = ISO8601DateFormatter().string(from: Date())
+        var quarantinedMainPath: String?
         for suffix in ["", "-wal", "-shm"] {
             let source = URL(fileURLWithPath: url.path + suffix)
             guard fm.fileExists(atPath: source.path) else { continue }
             let destination = URL(fileURLWithPath: url.path + ".corrupt-\(stamp)" + suffix)
             do {
                 try fm.moveItem(at: source, to: destination)
+                if suffix.isEmpty { quarantinedMainPath = destination.path }
             } catch {
                 log.error("Could not preserve \(source.lastPathComponent): \(error)")
             }
         }
+        return quarantinedMainPath
     }
 }
 
