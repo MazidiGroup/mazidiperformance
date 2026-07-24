@@ -39,6 +39,11 @@ targets:
         buildPhase: resources
       - path: content/exercises/catalogue/media-manifest.json
         buildPhase: resources
+      # Full client-content draft (all catalogued slugs): display names + approved
+      # aliases for catalogue search, and draft coaching copy for the coach preview.
+      # DRAFT status — always labelled "DRAFT COPY · PENDING REVIEW" where shown.
+      - path: content/exercises/client-layer/mazidi-client-content-draft.json
+        buildPhase: resources
     dependencies:
       - package: MazidiKit
         products: [MazidiFoundations, MazidiDomain, MazidiPersistence, MazidiPersistenceGRDB, MazidiSync, MazidiServices, MazidiNetworking, MazidiAuth, MazidiContent]

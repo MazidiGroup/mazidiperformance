@@ -1,4 +1,5 @@
 import SwiftUI
+import MazidiContent
 import MazidiDomain
 import MazidiFoundations
 
@@ -49,13 +50,20 @@ struct WorkoutEditorView: View {
         .navigationBarTitleDisplayMode(.inline)
         .scrollDismissesKeyboard(.interactively)
         .sheet(isPresented: $showAddExercise) {
-            ExercisePickerSheet(content: modelContent) { slug in
+            CatalogueExercisePicker(
+                store: model.catalogueStore,
+                content: modelContent,
+                media: model.media
+            ) { slug, selectedLabel in
                 Task {
                     await model.updateDraft(current) { draft in
                         draft.exercises.append(PrescribedExercise(
                             slug: slug,
                             order: draft.exercises.count,
-                            prescription: .repsAndLoad(sets: 3, reps: 8...12, loadKg: nil)
+                            prescription: .repsAndLoad(sets: 3, reps: 8...12, loadKg: nil),
+                            // Freeze the label the coach saw at selection (ADR-0011 §2);
+                            // the slug remains the stable identity.
+                            selectedLabel: selectedLabel
                         ))
                     }
                 }
@@ -79,9 +87,7 @@ struct WorkoutEditorView: View {
         }
     }
 
-    private var modelContent: any ExerciseContentProviding {
-        FixtureExerciseContentProvider()
-    }
+    private var modelContent: any ExerciseContentProviding { model.content }
 
     private var titleField: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -113,7 +119,8 @@ struct WorkoutEditorView: View {
     }
 
     private func exerciseRow(_ exercise: PrescribedExercise, index: Int, count: Int) -> some View {
-        let name = modelContent.content(for: exercise.slug)?.displayName ?? exercise.slug.rawValue
+        // Prefer the label frozen at selection; fall back to live content, then slug.
+        let name = exercise.selectedLabel ?? modelContent.content(for: exercise.slug)?.displayName ?? exercise.slug.rawValue
         return MazidiCard {
             let layout = typeSize.isAccessibilitySize
                 ? AnyLayout(VStackLayout(alignment: .leading, spacing: MazidiMetric.tightSpacing))
@@ -217,53 +224,281 @@ struct WorkoutEditorView: View {
     }
 }
 
-// MARK: - Exercise picker (bundled fixture library)
+// MARK: - Catalogue-backed exercise picker (ADR-0011 §1)
 
-private struct ExercisePickerSheet: View {
+/// Search / filter / preview over the canonical exercise catalogue. Selection returns the
+/// stable canonical slug plus the display label frozen at selection time. Ordering is
+/// deterministic (display name, slug tiebreak) so it never shifts unpredictably between
+/// launches; filters combine deterministically. No live-internet dependency — everything
+/// resolves from the bundled catalogue + representative media.
+private struct CatalogueExercisePicker: View {
+    let store: ExerciseCatalogueStore
     let content: any ExerciseContentProviding
-    let onPick: (ExerciseSlug) -> Void
+    let media: any MediaResolving
+    let onPick: (ExerciseSlug, String) -> Void
     @Environment(\.dismiss) private var dismiss
 
-    /// The bundled representative slugs (full library arrives via the content pipeline).
-    private let slugs: [ExerciseSlug] = [
-        "barbell-squat", "barbell-bent-over-row", "barbell-high-incline-bench-press",
-        "cable-seated-rope-face-pull", "band-wood-chopper", "dumbbell-row-bilateral",
-        "kettlebell-sumo-deadlift", "barbell-rack-pull",
-    ]
+    /// Wrapper so the preview sheet can key off a value type (`ExerciseSlug` is not
+    /// `Identifiable`, and we avoid retroactively conforming a domain type).
+    private struct PreviewItem: Identifiable { let slug: ExerciseSlug; var id: String { slug.rawValue } }
+
+    @State private var query = ""
+    @State private var category: String?      // movement pattern
+    @State private var equipment: String?
+    @State private var preview: PreviewItem?
+
+    private var results: [CatalogueRecord] {
+        store.search(query, filter: CatalogueFilter(
+            equipment: equipment.map { [$0] } ?? [],
+            movementPatterns: category.map { [$0] } ?? []
+        ))
+    }
+
+    private func label(for slug: ExerciseSlug) -> String {
+        content.content(for: slug)?.displayName ?? slug.rawValue
+    }
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: MazidiMetric.tightSpacing) {
-                    ForEach(slugs, id: \.self) { slug in
-                        let name = content.content(for: slug)?.displayName ?? slug.rawValue
-                        Button {
-                            onPick(slug)
-                            dismiss()
-                        } label: {
-                            HStack {
-                                Text(name)
-                                    .font(MazidiFont.body)
-                                    .foregroundStyle(MazidiColor.text)
-                                Spacer()
-                                Image(systemName: "plus.circle")
-                                    .foregroundStyle(MazidiColor.link)
-                            }
-                            .padding(MazidiMetric.cardPadding)
-                            .frame(minHeight: MazidiMetric.minTarget)
-                            .background(MazidiColor.surface, in: RoundedRectangle(cornerRadius: MazidiMetric.chipRadius, style: .continuous))
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("exercise_option.\(slug.rawValue)")
-                    }
-                }
-                .padding(MazidiMetric.screenPadding)
+            VStack(spacing: MazidiMetric.tightSpacing) {
+                searchField
+                filters
+                resultsSection(results)
             }
             .background(MazidiColor.background)
             .navigationTitle("Add exercise")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+            }
+            .sheet(item: $preview) { item in
+                CatalogueExercisePreview(
+                    slug: item.slug,
+                    label: label(for: item.slug),
+                    record: store.record(for: item.slug),
+                    content: content.content(for: item.slug),
+                    media: media
+                ) {
+                    onPick(item.slug, label(for: item.slug))
+                    dismiss()
+                }
+            }
+        }
+    }
+
+    private var searchField: some View {
+        HStack(spacing: MazidiMetric.tightSpacing) {
+            Image(systemName: "magnifyingglass").foregroundStyle(MazidiColor.textSecondary)
+            TextField("Search exercises", text: $query)
+                .textFieldStyle(.plain)
+                .autocorrectionDisabled()
+                .frame(minHeight: MazidiMetric.minTarget)
+                .accessibilityIdentifier("coach_exercise_search")
+            if !query.isEmpty {
+                Button {
+                    query = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(MazidiColor.textSecondary)
+                }
+                .accessibilityLabel("Clear search")
+                .accessibilityIdentifier("coach_exercise_search_clear")
+            }
+        }
+        .padding(.horizontal, MazidiMetric.cardPadding)
+        .frame(minHeight: MazidiMetric.minTarget)
+        .background(MazidiColor.surface, in: RoundedRectangle(cornerRadius: MazidiMetric.chipRadius, style: .continuous))
+        .padding(.horizontal, MazidiMetric.screenPadding)
+    }
+
+    @ViewBuilder private var filters: some View {
+        HStack(spacing: MazidiMetric.tightSpacing) {
+            filterMenu(
+                title: category ?? "Category",
+                options: store.availableMovementPatterns,
+                selection: $category,
+                id: "coach_filter_category"
+            )
+            filterMenu(
+                title: equipment ?? "Equipment",
+                options: store.availableEquipment,
+                selection: $equipment,
+                id: "coach_filter_equipment"
+            )
+            Spacer()
+        }
+        .padding(.horizontal, MazidiMetric.screenPadding)
+    }
+
+    private func filterMenu(title: String, options: [String], selection: Binding<String?>, id: String) -> some View {
+        Menu {
+            Button("All") { selection.wrappedValue = nil }
+            ForEach(options, id: \.self) { option in
+                Button(option) { selection.wrappedValue = option }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Text(title).font(MazidiFont.callout)
+                Image(systemName: "chevron.down").font(.caption2)
+            }
+            .padding(.horizontal, MazidiMetric.cardPadding)
+            .frame(minHeight: MazidiMetric.minTarget)
+            .background(
+                (selection.wrappedValue == nil ? MazidiColor.surface : MazidiColor.surfaceAlt),
+                in: RoundedRectangle(cornerRadius: MazidiMetric.chipRadius, style: .continuous)
+            )
+        }
+        .accessibilityIdentifier(id)
+    }
+
+    @ViewBuilder private func resultsSection(_ records: [CatalogueRecord]) -> some View {
+        if store.allRecords.isEmpty {
+            MessageState(
+                systemImage: "exclamationmark.triangle",
+                title: "Exercise library unavailable",
+                message: "The catalogue couldn't be loaded. Restart the app; your drafts are safe."
+            )
+            .accessibilityIdentifier("coach_picker_unavailable")
+            Spacer()
+        } else if records.isEmpty {
+            MessageState(
+                systemImage: "magnifyingglass",
+                title: "No matches",
+                message: "No exercises match your search and filters."
+            )
+            .accessibilityIdentifier("coach_picker_empty")
+            Spacer()
+        } else {
+            ScrollView {
+                LazyVStack(spacing: MazidiMetric.tightSpacing) {
+                    ForEach(records, id: \.slug) { record in
+                        row(record)
+                    }
+                }
+                .padding(MazidiMetric.screenPadding)
+            }
+        }
+    }
+
+    private func row(_ record: CatalogueRecord) -> some View {
+        let slug = record.slug
+        let name = label(for: slug)
+        return HStack(spacing: MazidiMetric.stackSpacing) {
+            ExercisePosterThumbnail(slug: slug, displayName: name, media: media, side: 44)
+            Button {
+                onPick(slug, name)
+                dismiss()
+            } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(name).font(MazidiFont.body).foregroundStyle(MazidiColor.text)
+                    if !record.equipment.isEmpty {
+                        Text(record.equipment.joined(separator: " · "))
+                            .font(MazidiFont.caption).foregroundStyle(MazidiColor.textSecondary)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("exercise_option.\(slug.rawValue)")
+            .accessibilityHint("Add to workout")
+
+            Button {
+                preview = PreviewItem(slug: slug)
+            } label: {
+                Image(systemName: "info.circle")
+                    .foregroundStyle(MazidiColor.link)
+                    .frame(width: MazidiMetric.minTarget, height: MazidiMetric.minTarget)
+            }
+            .accessibilityLabel("Preview \(name)")
+            .accessibilityIdentifier("exercise_preview.\(slug.rawValue)")
+        }
+        .padding(MazidiMetric.cardPadding)
+        .background(MazidiColor.surface, in: RoundedRectangle(cornerRadius: MazidiMetric.chipRadius, style: .continuous))
+    }
+}
+
+// MARK: - Exercise preview (canonical metadata + draft coaching content)
+
+private struct CatalogueExercisePreview: View {
+    let slug: ExerciseSlug
+    let label: String
+    let record: CatalogueRecord?
+    let content: ExerciseContent?
+    let media: any MediaResolving
+    let onAdd: () -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: MazidiMetric.stackSpacing) {
+                    ExerciseMediaView(slug: slug, displayName: label, media: media)
+
+                    if content?.contentStatus == .draftRequiresHumanReview {
+                        DraftBadge()
+                    }
+
+                    Text(label)
+                        .font(MazidiFont.screenTitle)
+                        .foregroundStyle(MazidiColor.text)
+                        .accessibilityAddTraits(.isHeader)
+
+                    if let record {
+                        metadataCard(record)
+                    }
+
+                    if let description = content?.clientDescription, !description.isEmpty {
+                        Text(description).font(MazidiFont.body).foregroundStyle(MazidiColor.text)
+                    }
+                    bulletSection("How to do it", items: content?.clientInstructions ?? [])
+                    bulletSection("Common mistakes", items: content?.clientMistakes ?? [])
+                }
+                .padding(MazidiMetric.screenPadding)
+            }
+            .background(MazidiColor.background)
+            .navigationTitle(label)
+            .navigationBarTitleDisplayMode(.inline)
+            .accessibilityIdentifier("coach_exercise_preview")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Add") { onAdd() }
+                        .accessibilityIdentifier("preview_add_exercise")
+                }
+            }
+        }
+    }
+
+    private func metadataCard(_ record: CatalogueRecord) -> some View {
+        MazidiCard {
+            VStack(alignment: .leading, spacing: 6) {
+                metadataRow("Equipment", record.equipment)
+                metadataRow("Movement", record.movementPattern)
+                metadataRow("Primary muscles", record.primaryMuscles)
+                if !record.difficulty.isEmpty {
+                    metadataRow("Difficulty", [record.difficulty])
+                }
+            }
+        }
+    }
+
+    @ViewBuilder private func metadataRow(_ title: String, _ values: [String]) -> some View {
+        if !values.isEmpty {
+            HStack(alignment: .firstTextBaseline, spacing: MazidiMetric.tightSpacing) {
+                Text(title).font(MazidiFont.caption).foregroundStyle(MazidiColor.textSecondary)
+                    .frame(width: 120, alignment: .leading)
+                Text(values.joined(separator: " · ")).font(MazidiFont.callout).foregroundStyle(MazidiColor.text)
+            }
+            .accessibilityElement(children: .combine)
+        }
+    }
+
+    @ViewBuilder private func bulletSection(_ title: String, items: [String]) -> some View {
+        if !items.isEmpty {
+            VStack(alignment: .leading, spacing: MazidiMetric.tightSpacing) {
+                SectionHeader(title: title)
+                ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                    Text(item).font(MazidiFont.callout).foregroundStyle(MazidiColor.text)
+                }
             }
         }
     }

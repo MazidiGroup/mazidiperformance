@@ -21,6 +21,36 @@ private func row(order: Int = 1) -> PrescribedExercise {
 }
 
 @Suite struct ProgrammingDomainTests {
+    /// Assignment-snapshot compatibility (ADR-0009 + ADR-0011): publishing then assigning
+    /// freezes the canonical slug AND the label the coach selected; later draft edits never
+    /// rewrite the frozen version/assignment content, and execution keeps the canonical slug.
+    @Test func assignmentSnapshotPreservesCanonicalSlugAndFrozenLabelAcrossDraftEdits() throws {
+        var template = WorkoutTemplate(
+            draft: WorkoutTemplateContent(title: "Canon", exercises: [
+                PrescribedExercise(
+                    slug: "barbell-squat", order: 0,
+                    prescription: .repsAndLoad(sets: 3, reps: 5...8, loadKg: 80),
+                    selectedLabel: "Barbell Squat"
+                ),
+            ]),
+            updatedAt: t0
+        )
+        let version = try template.publish(at: t0)
+        let assignment = WorkoutAssignment(version: version, assigneeAccountRef: "dev-client-001", assignedAt: t0)
+
+        // Mutate the draft AFTER publishing/assigning — change slug and label.
+        template.draft.exercises[0].slug = "kettlebell-sumo-deadlift"
+        template.draft.exercises[0].selectedLabel = "Something Else"
+
+        // The frozen version and assignment are untouched: canonical slug + label preserved.
+        #expect(version.content.exercises.first?.slug == "barbell-squat")
+        #expect(version.content.exercises.first?.selectedLabel == "Barbell Squat")
+        #expect(assignment.content.exercises.first?.slug == "barbell-squat")
+        #expect(assignment.content.exercises.first?.selectedLabel == "Barbell Squat")
+        // Execution mapping keeps the canonical slug.
+        #expect(try assignment.assignedWorkout().allExercises.first?.slug == "barbell-squat")
+    }
+
     @Test func draftCreationAndExerciseOrdering() {
         var template = WorkoutTemplate(
             draft: WorkoutTemplateContent(title: "Lower A", exercises: [row(order: 5), squat(order: 2)]),
