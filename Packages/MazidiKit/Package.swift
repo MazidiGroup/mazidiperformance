@@ -43,7 +43,9 @@ let package = Package(
             "MazidiPersistence", "MazidiSync", "MazidiDomain", "MazidiFoundations",
             .product(name: "GRDB", package: "GRDB.swift"),
         ]),
-        .target(name: "MazidiNetworking", dependencies: ["MazidiDomain", "MazidiFoundations"]),
+        // Depends on MazidiAuth for the stable AccountID/RevocationCheck identity types the
+        // sync contracts reference (ADR-0012). MazidiAuth imports Foundation only — no cycle.
+        .target(name: "MazidiNetworking", dependencies: ["MazidiDomain", "MazidiFoundations", "MazidiAuth"]),
         // Exercise catalogue & media manifest models (ADR-0010). Foundation-only.
         .target(name: "MazidiContent", dependencies: ["MazidiFoundations"]),
         // Read-only source-library audit / catalogue generator (ADR-0010).
@@ -61,5 +63,6 @@ let package = Package(
         ]),
         .testTarget(name: "MazidiAuthTests", dependencies: ["MazidiAuth"]),
         .testTarget(name: "MazidiContentTests", dependencies: ["MazidiContent"]),
+        .testTarget(name: "MazidiNetworkingTests", dependencies: ["MazidiNetworking", "MazidiAuth"]),
     ]
 )

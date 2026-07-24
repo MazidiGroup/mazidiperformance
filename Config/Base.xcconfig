@@ -15,3 +15,10 @@
 // `https://cdn.example` cannot be written inline without escaping — configure a real
 // origin per the deployment runbook when the backend lands, not by hand here.
 MEDIA_BASE_URL =
+
+// SYNC_BASE_URL — origin for the backend synchronisation transport (ADR-0012 §1).
+// EMPTY BY DEFAULT — no backend exists yet (R-01/R-02), so the sync transport is honestly
+// inert (only the DEBUG fake runs) until a real origin is configured. Surfaced to the app
+// through the Info.plist key `SyncBaseURL` (see project.yml). NEVER commit a credential,
+// signed URL, tenant id, or hostname here (same `//`-is-a-comment caveat as MEDIA_BASE_URL).
+SYNC_BASE_URL =

@@ -56,6 +56,10 @@ targets:
         # configuration's .xcconfig (MEDIA_BASE_URL). Empty until a CDN exists (R-02);
         # empty means the remote media tier is disabled. No secret is stored here.
         MediaBaseURL: $(MEDIA_BASE_URL)
+        # Backend sync origin (ADR-0012 §1), from the active configuration's .xcconfig
+        # (SYNC_BASE_URL). Empty until a backend exists (R-01/R-02); empty means the sync
+        # transport is inert (only the DEBUG fake runs). No secret is stored here.
+        SyncBaseURL: $(SYNC_BASE_URL)
         # Health/photo/calendar usage strings are added when those features land
         # (phases 5/7) — permissions are off by default and never a prerequisite (8g).
   MazidiPerformanceUITests:
