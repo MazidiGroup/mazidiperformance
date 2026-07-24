@@ -1,4 +1,5 @@
 cf64a1b82199bac7a7faabe76d8e786b5b9fcfe6233fda2a4e15900bf9166729  ./.gitattributes
+6123e04e79d9bd97cbe9218c7d7aeef9197be5a8d8e0d7c85137423e6d72be50  ./.github/workflows/ci.yml
 956452a57ccba01a3bcc14f23ef627f884b6446e89d806ee99d964e5b5bbea68  ./.gitignore
 e0c4cb15aa2736c7e291df4dda1149a24cc2cc948cad5ccf6bbd0725fd825f84  ./App/Client/ClientRootView.swift
 4867c6f23f63ec4d6e5cb071ae264f727b418588a93948256508d3524211b313  ./App/Client/Model/ClientWorkoutModel.swift
@@ -32,6 +33,7 @@ cfde937500e4d19d4dad57bc4dd15b001945a3f6222cfdac594a114e5ff7d67c  ./App/Resource
 19acac1e832cf382deb37f8af4dbaa3f0b609dcdcf80446c5f5b12ae2e83359f  ./App/Resources/Media/posters/cable-seated-rope-face-pull.webp
 8d526f3dbb603f547a099ec627b7a907ef9b4df767a93d0b1d4de305dd2fd6ed  ./App/Resources/Media/posters/dumbbell-row-bilateral.webp
 c988d2a0a9a9d0800cb517c95369875a46cbf88a1517194b7e67b83ae4b78fbf  ./App/Resources/Media/posters/kettlebell-sumo-deadlift.webp
+d18794328ad35e0b29a7d5ef643a78e8f319c074923309a981b43459e3dbfe59  ./CLAUDE.md
 2b08a346771ea187f3053d420d1067b5e6284b8fed539ebb18fe8d28c16b5ced  ./Packages/MazidiKit/Package.swift
 0a7e9d5edb32d692d67bc5de8294478a8c51623b95dd4b3b767e789d80dcdba5  ./Packages/MazidiKit/Sources/MazidiDomain/AuditEvent.swift
 6fe473348e88c93207c5fafcdc620e429798552f7de9e367b9c69f7c0ff9f878  ./Packages/MazidiKit/Sources/MazidiDomain/Exercise.swift
@@ -498,6 +500,7 @@ ad4b003febc25a16360b06ad3392a072af4bbc61f3d2c1bd7b0bad66a7ed2783  ./design/hando
 6ce086ebe5a651ef5108ab797de13b5aaa139ae7bd86458bb642fffad4b01357  ./docs/ASSET_PIPELINE.md
 ec8245bff1b6c3eeb02b626d123a1f0d8cb642cc720fe23e48033f8573ae0f79  ./docs/BUILD_AND_TEST.md
 59c93ed81dc6315a6be6be7d9ac2a9fe91cbd8e51e9e2892b07aa955ef299f6e  ./docs/DECISION_LOG.md
+7b3eb0778c4a70b924c837d300caedd4d9732d4cc2cc8d8262c487b025587c75  ./docs/KNOWN_ISSUES.md
 0c4fb1401a751a4537e66e6ea4415426caf4373bc8678d5388aa27ae2147fb1b  ./docs/PROJECT_STATUS.md
 1169e6db04ba888c79b0e44bc7be74b6fce22bb9f3dd7109f69db53e44fb47d3  ./docs/RISK_REGISTER.md
 d7dd4c6ae30ccd5471aae1ac52bb6f9a9c3f70eceacacd44abe54e0adeeb7ea2  ./docs/ROADMAP.md
