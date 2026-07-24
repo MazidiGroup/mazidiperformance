@@ -1,5 +1,28 @@
 # Exercise asset pipeline
 
+## Canonical catalogue (ADR-0010)
+
+`content/exercises/catalogue/` holds the committed, generated catalogue:
+`catalogue.json` (canonical records + media identities), `media-manifest.json`
+(delivery manifest derived from it), and `mapping-overrides.json` (tracked human
+resolutions for ambiguous files; empty when none were needed). Regenerate with:
+
+```bash
+swift run --package-path Packages/MazidiKit mazidi-content-audit \
+  --source "/Users/mazadi/Documents/MazidiPerformance/Animation_Pack_20-07-26" \
+  --work .content-pipeline-work \
+  --emit-into content/exercises/catalogue \
+  --previous content/exercises/catalogue/catalogue.json \
+  --overrides content/exercises/catalogue/mapping-overrides.json
+```
+
+The tool reads the source zips strictly read-only (streams, no extraction),
+writes the review report to the git-ignored `.content-pipeline-work/`, and is
+byte-deterministic: rerunning against unchanged sources reproduces the committed
+files exactly and keeps the catalogue version unchanged. Review the printed
+summary — anything ambiguous or unmatched needs a human decision recorded in
+`mapping-overrides.json`, never a guess.
+
 ## What belongs in this repository
 
 - The 206-record source metadata used to define stable exercise identity and asset filenames.
