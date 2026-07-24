@@ -23,7 +23,7 @@ targets:
       - App
     dependencies:
       - package: MazidiKit
-        products: [MazidiFoundations, MazidiDomain, MazidiPersistence, MazidiSync, MazidiServices, MazidiNetworking]
+        products: [MazidiFoundations, MazidiDomain, MazidiPersistence, MazidiPersistenceGRDB, MazidiSync, MazidiServices, MazidiNetworking]
     info:
       path: App/Info.plist
       properties:

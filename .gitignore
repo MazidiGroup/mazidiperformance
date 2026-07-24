@@ -32,3 +32,8 @@ xcuserdata/
 production-animation-library/
 full-animation-library/
 *.mov
+
+# ── Local databases (never commit client data) ────────────────────
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm

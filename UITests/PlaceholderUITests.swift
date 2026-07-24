@@ -6,6 +6,8 @@ final class PlaceholderUITests: XCTestCase {
     @MainActor
     func testAppLaunches() throws {
         let app = XCUIApplication()
+        // Fresh in-memory store (DEBUG) — smoke launches never touch the durable database.
+        app.launchEnvironment["MAZIDI_STORE_MODE"] = "ephemeral"
         app.launch()
         XCTAssertTrue(app.exists)
     }

@@ -61,6 +61,33 @@ public struct SyncOperation: Sendable, Codable, Equatable, Identifiable {
         self.lastError = nil
     }
 
+    /// Persistence-restoration initializer (ADR-0007): reconstructs an operation in an
+    /// arbitrary durable state (status, attempts, last error). Not for feature code —
+    /// state changes go through the mark* methods.
+    public init(
+        restoring id: Identifier<SyncOperation>,
+        kind: Kind,
+        aggregateID: UUID,
+        sequence: Int,
+        idempotencyKey: UUID,
+        payload: Data,
+        enqueuedAt: Date,
+        status: Status,
+        attemptCount: Int,
+        lastError: String?
+    ) {
+        self.id = id
+        self.kind = kind
+        self.aggregateID = aggregateID
+        self.sequence = sequence
+        self.idempotencyKey = idempotencyKey
+        self.payload = payload
+        self.enqueuedAt = enqueuedAt
+        self.status = status
+        self.attemptCount = attemptCount
+        self.lastError = lastError
+    }
+
     public mutating func markInFlight() {
         status = .inFlight
         attemptCount += 1

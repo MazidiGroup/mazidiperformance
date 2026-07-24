@@ -47,6 +47,19 @@ public protocol AuditEventStore: Sendable {
     func allEvents() async throws -> [AuditEvent]
 }
 
+/// Application-level chain hash (ADR-0006). FNV-1a over the stable fields — a
+/// dependency-free tamper-evidence hash shared by every store implementation so the
+/// chain stays consistent across the in-memory and durable stores; swap for SHA-256
+/// (swift-crypto) app-side later. Genesis value is "0".
+public func auditChainHash(of event: AuditEvent) -> String {
+    var hash: UInt64 = 0xcbf29ce484222325
+    for byte in "\(event.id)|\(event.kind.rawValue)|\(event.previousHash)".utf8 {
+        hash ^= UInt64(byte)
+        hash = hash &* 0x100000001b3
+    }
+    return String(format: "%016llx", hash)
+}
+
 // MARK: - In-memory reference implementation
 
 public actor InMemoryStore<Operation: OutboxOperation>: WorkoutSessionRepository, SyncOperationStore, AuditEventStore {
@@ -132,21 +145,10 @@ public actor InMemoryStore<Operation: OutboxOperation>: WorkoutSessionRepository
     }
 
     public func latestHash() async throws -> String {
-        auditEvents.last.map { chainHash(of: $0) } ?? "0"
+        auditEvents.last.map { auditChainHash(of: $0) } ?? "0"
     }
 
     public func allEvents() async throws -> [AuditEvent] {
         auditEvents
-    }
-
-    /// Application-level chain hash (ADR-0006). FNV-1a over the stable fields — a
-    /// dependency-free tamper-evidence hash; swap for SHA-256 (swift-crypto) app-side.
-    private func chainHash(of event: AuditEvent) -> String {
-        var hash: UInt64 = 0xcbf29ce484222325
-        for byte in "\(event.id)|\(event.kind.rawValue)|\(event.previousHash)".utf8 {
-            hash ^= UInt64(byte)
-            hash = hash &* 0x100000001b3
-        }
-        return String(format: "%016llx", hash)
     }
 }

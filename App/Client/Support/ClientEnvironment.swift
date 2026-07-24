@@ -2,6 +2,7 @@ import Foundation
 import MazidiDomain
 import MazidiFoundations
 import MazidiPersistence
+import MazidiPersistenceGRDB
 import MazidiServices
 import MazidiSync
 
@@ -27,23 +28,61 @@ protocol ConnectivityControlling: AnyObject, Sendable {
     var isOnline: Bool { get set }
 }
 
+/// The three store roles one durable database satisfies together (single transaction
+/// scope). All three handles reference the SAME underlying store instance — the generic
+/// initializer is the only way to build one, so the roles can never be split across
+/// different databases. Held as separate existentials rather than a protocol composition
+/// because the CI-pinned Swift 6.1 compiler (Xcode 16.4) rejects parameterized protocols
+/// inside compositions (`… & SyncOperationStore<SyncOperation>`), while plain
+/// parameterized existentials like `SyncOutboxStore` compile on both toolchains.
+struct ClientStore {
+    let sessions: any WorkoutSessionRepository
+    let operations: SyncOutboxStore
+    let audit: any AuditEventStore
+
+    init<S>(_ store: S)
+        where S: WorkoutSessionRepository, S: AuditEventStore,
+              S: SyncOperationStore, S.Operation == SyncOperation {
+        self.sessions = store
+        self.operations = store
+        self.audit = store
+    }
+}
+
 // MARK: - Composition root for the Client slice
 
-/// Wires the Client workout slice to MazidiKit: one local store shared by the session
-/// service and the sync engine (single transaction scope, as the GRDB adapter will use),
-/// injectable clock, fixture content/media, and a fixture transport whose connectivity is
-/// toggleable so the honest offline/sync states can be exercised end-to-end.
+/// Wires the Client workout slice to MazidiKit. In normal execution the store is the
+/// durable GRDB database (ADR-0002/0007); previews and UI tests can request an ephemeral
+/// or relocated store through DEBUG-only environment overrides. The sync transport is
+/// still a fixture whose connectivity is toggleable (no backend, R-01/R-02).
 ///
-/// This is the ONLY place fixtures are constructed; views and the view-model receive
-/// everything through this object, never reaching for globals.
+/// This is the ONLY place stores/fixtures are constructed; views and the view-model
+/// receive everything through this object, never reaching for globals.
 @MainActor
 final class ClientEnvironment {
+    /// Typed health of the store this launch (from GRDBStore.RecoveryCondition). The UI
+    /// must consume this so a fresh-after-quarantine or fallback store is never presented
+    /// as a normal empty state.
+    enum StoreHealth: Equatable {
+        /// Durable database opened normally — genuine first launch or existing data.
+        case durable
+        /// A damaged database was quarantined (preserved at the path, never deleted) and
+        /// this launch runs on a fresh replacement. Must be surfaced to the user.
+        case recoveredAfterQuarantine(quarantinedPath: String)
+        /// DEBUG-only intentional ephemeral store (UI tests, previews). Expected; silent.
+        case intentionallyEphemeral
+        /// The durable store was unrecoverable this launch; running in-memory. Workouts
+        /// recorded now will NOT survive relaunch — must be surfaced to the user.
+        case ephemeralFallback
+    }
+
     let clock: any AppClock
     let content: any ExerciseContentProviding
     let media: any MediaResolving
     let assignedWorkout: AssignedWorkout
+    let storeHealth: StoreHealth
 
-    private let store: InMemorySyncStore
+    private let store: ClientStore
     private let transport: FixtureSyncTransport
     let service: WorkoutSessionService
     let syncEngine: SyncEngine
@@ -54,28 +93,80 @@ final class ClientEnvironment {
         clock: any AppClock = SystemClock(),
         content: any ExerciseContentProviding = FixtureExerciseContentProvider(),
         media: any MediaResolving = BundleMediaResolver(),
-        assignedWorkout: AssignedWorkout = ClientFixtures.todaysWorkout
+        assignedWorkout: AssignedWorkout = ClientFixtures.todaysWorkout,
+        store: ClientStore? = nil
     ) {
         self.clock = clock
         self.content = content
         self.media = media
         self.assignedWorkout = assignedWorkout
 
-        let store = InMemorySyncStore()
+        let (resolvedStore, health) = store.map { ($0, StoreHealth.durable) } ?? Self.makeStore()
+        self.storeHealth = health
         let transport = FixtureSyncTransport()
-        self.store = store
+        self.store = resolvedStore
         self.transport = transport
         self.service = WorkoutSessionService(
-            store: .init(sessions: store, operations: store, audit: store),
+            store: .init(
+                sessions: resolvedStore.sessions,
+                operations: resolvedStore.operations,
+                audit: resolvedStore.audit
+            ),
             clock: clock,
             actorID: ClientFixtures.devClientActorID
         )
-        self.syncEngine = SyncEngine(store: store, transport: transport)
+        self.syncEngine = SyncEngine(store: resolvedStore.operations, transport: transport)
+    }
+
+    /// Store selection. Durable GRDB in Application Support is the normal path; the
+    /// DEBUG-only overrides exist for UI tests and previews:
+    /// - `MAZIDI_STORE_MODE=ephemeral` — fresh in-memory database for this process.
+    /// - `MAZIDI_STORE_DIR=<path>` — durable database at an explicit directory (the
+    ///   relaunch-restoration UI test uses a unique temp directory).
+    /// Neither override is compiled into Release builds.
+    private static func makeStore() -> (ClientStore, StoreHealth) {
+        let log = AppLog(category: "persistence")
+        #if DEBUG
+        let env = ProcessInfo.processInfo.environment
+        if env["MAZIDI_STORE_MODE"] == "ephemeral", let ephemeral = try? GRDBStore.inMemory() {
+            return (ClientStore(ephemeral), .intentionallyEphemeral)
+        }
+        if let dir = env["MAZIDI_STORE_DIR"],
+           let relocated = try? GRDBStore.open(directory: URL(fileURLWithPath: dir, isDirectory: true)) {
+            return (ClientStore(relocated), Self.health(of: relocated))
+        }
+        #endif
+        do {
+            let base = try FileManager.default.url(
+                for: .applicationSupportDirectory, in: .userDomainMask,
+                appropriateFor: nil, create: true
+            )
+            let store = try GRDBStore.open(
+                directory: base.appendingPathComponent("MazidiPerformance", isDirectory: true)
+            )
+            return (ClientStore(store), Self.health(of: store))
+        } catch {
+            // Unrecoverable open failure (the corrupt-file policy already ran and the
+            // damaged files are preserved on disk — MIGRATIONS.md). Keep this launch
+            // usable with an in-memory store, and surface the condition — never a
+            // silent empty state.
+            log.error("Durable store unavailable (\(error)); running in-memory for this launch")
+            return (ClientStore(InMemorySyncStore()), .ephemeralFallback)
+        }
+    }
+
+    private static func health(of store: GRDBStore) -> StoreHealth {
+        switch store.recovery {
+        case .normal:
+            return .durable
+        case let .recoveredAfterQuarantine(quarantinedPath, _):
+            return .recoveredAfterQuarantine(quarantinedPath: quarantinedPath)
+        }
     }
 
     /// Pending (not-yet-acknowledged) operation count — the truth behind "waiting to sync".
     func pendingOperationCount() async -> Int {
-        (try? await store.pendingOperations().count) ?? 0
+        (try? await store.operations.pendingOperations().count) ?? 0
     }
 
     func makeWorkoutModel() -> ClientWorkoutModel {
