@@ -40,13 +40,16 @@ struct ClientStore {
     let sessions: any WorkoutSessionRepository
     let operations: SyncOutboxStore
     let audit: any AuditEventStore
+    let programming: ProgrammingStore
 
     init<S>(_ store: S)
         where S: WorkoutSessionRepository, S: AuditEventStore,
-              S: SyncOperationStore, S.Operation == SyncOperation {
+              S: SyncOperationStore, S: ProgrammingRepository,
+              S.Operation == SyncOperation {
         self.sessions = store
         self.operations = store
         self.audit = store
+        self.programming = store
     }
 }
 
@@ -120,7 +123,8 @@ final class ClientEnvironment {
             store: .init(
                 sessions: resolvedStore.sessions,
                 operations: resolvedStore.operations,
-                audit: resolvedStore.audit
+                audit: resolvedStore.audit,
+                programming: resolvedStore.programming
             ),
             clock: clock,
             // Deterministic per-account actor identity (never the raw account ID).
@@ -210,6 +214,17 @@ final class ClientEnvironment {
     /// Pending (not-yet-acknowledged) operation count — the truth behind "waiting to sync".
     func pendingOperationCount() async -> Int {
         (try? await store.operations.pendingOperations().count) ?? 0
+    }
+
+    /// Assignment reads for this client's account (ADR-0009). The account-scoped
+    /// database only ever contains this client's assignments; the filter is defence in
+    /// depth against relayed rows addressed elsewhere.
+    func openAssignments() async -> [WorkoutAssignment] {
+        let all = (try? await store.programming.allAssignments()) ?? []
+        return all.filter {
+            $0.assigneeAccountRef == accountID.rawValue
+                && ($0.status == .queued || $0.status == .started)
+        }
     }
 
     func makeWorkoutModel() -> ClientWorkoutModel {
