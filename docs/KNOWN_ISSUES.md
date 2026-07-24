@@ -150,6 +150,36 @@ additional UI/integration coverage for slice 1.
   the user's consent, after which this notice links to it; quarantined files remain
   preserved untouched until then.
 
+### L6 — Media cache validated-read re-hashes on the presentation path
+- **Where:** `MediaCacheReader.validatedURL` (`Packages/MazidiKit/Sources/MazidiContent`),
+  used by `CatalogueMediaResolver.posterURL/clipURL` (ADR-0011 §4/§5).
+- **Impact:** To guarantee a corrupt/same-size-tampered cache entry is never presented,
+  the synchronous read re-hashes the file (SHA-256) each time it is resolved. Today this
+  has **zero runtime cost** because the cache is always empty (no media backend exists,
+  R-02, so nothing is ever downloaded and every slug resolves at the bundled tier). Once a
+  real origin lands, re-hashing a multi-MB video on every resolve would be wasteful.
+- **Why not fixed now:** A validation memo (cache the "validated" verdict keyed by object
+  key + file size/mtime so re-hash runs once per file) is a backend-era optimization; the
+  bytes correctness rule takes precedence and there is no cost to pay until downloads exist.
+- **Owning milestone:** media-backend slice (with `MEDIA_BASE_URL` / the download path).
+- **Acceptance:** validated cache reads re-hash at most once per cached file version;
+  same-size corruption is still rejected before presentation; covered by a test.
+
+### L7 — Remote media tier is inert until a media origin is configured
+- **Where:** `RemoteMediaOrigin` from `MEDIA_BASE_URL` (empty in all shipped
+  `Config/*.xcconfig`); `CatalogueMediaResolver` remote tier; `MediaRequestCoordinator` /
+  `MediaCache` download path (ADR-0011 §4/§6).
+- **Impact:** The full 206-clip library is not deliverable on device yet: with no origin,
+  the remote fetch/download/cache path is never exercised at runtime, and only the bundled
+  representative set (2 clips + 8 posters) plays; everything else shows the honest
+  name+icon fallback. This is by design (no backend, R-01/R-02) — the contracts, cache,
+  fetcher, coordinator and their tests all exist and are green.
+- **Why not fixed now:** No content backend/CDN exists; fabricating live delivery would
+  violate the honesty rule.
+- **Owning milestone:** media-backend slice.
+- **Acceptance:** with `MEDIA_BASE_URL` configured, media downloads validate + cache +
+  present through the existing tiers; retry surfaces on failure; verified end to end.
+
 ### L4 — Missing UI coverage for the swap and offline→synced journeys
 - **Where:** `UITests/ClientWorkoutUITests.swift` (covers open / record / pause+resume /
   complete / debug-gating; not swap or connectivity transitions).
