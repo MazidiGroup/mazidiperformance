@@ -102,6 +102,23 @@ import Testing
         #expect(result.report.requiresHumanAttention)
     }
 
+    @Test func duplicateMetadataSlugExcludesEveryCopy() {
+        // Two metadata records claim the same slug — unresolvable, never deduped.
+        let inventory = SourceInventory(
+            metadata: [
+                SourceMetadataRecord(slug: "barbell-squat", name: "Barbell Squat"),
+                SourceMetadataRecord(slug: "barbell-squat", name: "Back Squat"),
+                SourceMetadataRecord(slug: "wall-sit", name: "Wall Sit"),
+            ],
+            posterFiles: ["posters/barbell-squat.webp", "posters/wall-sit.webp"],
+            videoFiles: ["barbell-squat.mp4", "wall-sit.mp4"]
+        )
+        let result = MappingClassifier.classify(inventory: inventory)
+        #expect(result.records.map(\.record.slug) == ["wall-sit"])  // only the unique slug survives
+        #expect(result.report.recordFindings.contains { $0.slug == "barbell-squat" && $0.excluded && $0.reason.contains("duplicate") })
+        #expect(result.report.requiresHumanAttention)
+    }
+
     @Test func nonCanonicalMetadataSlugIsExcluded() {
         let result = MappingClassifier.classify(inventory: inventory(slugs: ["Bad Slug!", "wall-sit"]))
         #expect(result.records.map(\.record.slug) == ["wall-sit"])

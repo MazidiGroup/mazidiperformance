@@ -124,10 +124,21 @@ public enum MappingClassifier {
         let posters = resolve(kind: .poster, files: inventory.posterFiles)
         let videos = resolve(kind: .video, files: inventory.videoFiles)
 
+        // Duplicate metadata slugs (§10): a slug must identify exactly one
+        // exercise. Two records claiming the same slug is unresolvable by the
+        // tool — every copy is excluded and reported, never silently deduped.
+        var slugCounts: [String: Int] = [:]
+        for record in inventory.metadata { slugCounts[record.slug, default: 0] += 1 }
+        let duplicatedSlugs = Set(slugCounts.filter { $0.value > 1 }.keys)
+
         var records: [ClassifiedRecord] = []
         for record in inventory.metadata.sorted(by: { $0.slug < $1.slug }) {
             guard ExerciseSlug.isCanonicalFormat(record.slug) else {
                 recordFindings.append(.init(slug: record.slug, reason: "slug is not in canonical format", excluded: true))
+                continue
+            }
+            if duplicatedSlugs.contains(record.slug) {
+                recordFindings.append(.init(slug: record.slug, reason: "duplicate metadata record for this slug — every copy excluded", excluded: true))
                 continue
             }
             let poster = posters[record.slug]
