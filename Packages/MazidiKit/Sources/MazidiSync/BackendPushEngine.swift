@@ -37,6 +37,12 @@ public struct BackendPushSummary: Sendable, Equatable {
     public var retried = 0
     /// True when the whole batch failed at the transport (not per-mutation).
     public var transportFailed = false
+    /// True when the transport reported this session revoked — the caller must route this to
+    /// `SessionCoordinator.revocationReported(...)` (ADR-0012 §8). No further work uploads.
+    public var revoked = false
+    /// True when the drain was skipped because the session was inactive (signed out /
+    /// switched / revoked) — proves no pending work uploads after revocation.
+    public var skippedInactive = false
 }
 
 public actor BackendPushEngine {
@@ -46,6 +52,9 @@ public actor BackendPushEngine {
     private let clock: any AppClock
     private let random: @Sendable () -> Double
     private let config: BackendPushConfig
+    /// Session-generation guard: false once the session signed out / switched / was revoked.
+    /// Checked BEFORE every send so no pending work uploads after revocation (ADR-0012 §8).
+    private let isActive: @Sendable () -> Bool
 
     public init(
         outbox: SyncOutboxStore,
@@ -53,7 +62,8 @@ public actor BackendPushEngine {
         transport: any SyncBackendTransport,
         clock: any AppClock,
         random: @escaping @Sendable () -> Double = { Double.random(in: 0..<1) },
-        config: BackendPushConfig = BackendPushConfig()
+        config: BackendPushConfig = BackendPushConfig(),
+        isActive: @escaping @Sendable () -> Bool = { true }
     ) {
         self.outbox = outbox
         self.syncStore = syncStore
@@ -61,6 +71,7 @@ public actor BackendPushEngine {
         self.clock = clock
         self.random = random
         self.config = config
+        self.isActive = isActive
     }
 
     /// Deterministic backoff delay for the next attempt (exponential + injected jitter),
@@ -74,6 +85,10 @@ public actor BackendPushEngine {
     /// Drain one bounded batch of due operations. Returns a summary for the caller/status.
     @discardableResult
     public func pushOnce(context: AuthenticatedRequestContext) async throws -> BackendPushSummary {
+        // No pending work uploads after sign-out / switch / revocation.
+        guard isActive() else {
+            var summary = BackendPushSummary(); summary.skippedInactive = true; return summary
+        }
         let now = clock.now()
         let pending = try await outbox.pendingOperations()
 
@@ -141,6 +156,10 @@ public actor BackendPushEngine {
             // Whole-batch transport failure: re-queue every attempted op with backoff,
             // honouring a rate-limit's retry-after. Nothing is dropped.
             summary.transportFailed = true
+            // A revoked transport signal is surfaced so the caller routes it to the
+            // SessionCoordinator; the ops stay queued (never dead-lettered) and the next
+            // drain is blocked by the isActive guard once the session is revoked.
+            if case .revoked = error { summary.revoked = true }
             let retryAfter: TimeInterval? = { if case let .rateLimited(limit) = error { return limit.retryAfter }; return nil }()
             var applications: [PushOutcomeApplication] = []
             for op in due {

@@ -188,7 +188,9 @@ final class CoachProgrammingModel {
     func activateRelationship(_ relationship: Relationship) async -> Bool {
         var mutable = relationship
         do { try mutable.activate(at: env.clock.now()) } catch { transientError = "That relationship can't be activated."; return false }
-        return await persistRelationship(mutable)
+        let ok = await persistRelationship(mutable)
+        if ok { try? await appendAudit(.relationshipActivated, subject: "relationship:\(mutable.id)") }
+        return ok
     }
 
     /// End an active relationship (blocks new access; existing history retained).
@@ -196,7 +198,9 @@ final class CoachProgrammingModel {
     func endRelationship(_ relationship: Relationship) async -> Bool {
         var mutable = relationship
         do { try mutable.end(at: env.clock.now()) } catch { transientError = "That relationship can't be ended."; return false }
-        return await persistRelationship(mutable)
+        let ok = await persistRelationship(mutable)
+        if ok { try? await appendAudit(.relationshipEnded, subject: "relationship:\(mutable.id)") }
+        return ok
     }
 
     private func persistRelationship(_ relationship: Relationship) async -> Bool {

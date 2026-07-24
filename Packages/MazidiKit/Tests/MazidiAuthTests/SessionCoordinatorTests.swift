@@ -355,3 +355,46 @@ private func makeStack(clock: FixedClock = FixedClock(t0)) -> (SessionCoordinato
         }
     }
 }
+
+@Suite struct SessionRevocationTests {
+    // Confirmed revocation from the sync transport: credentials deleted, generation bumped,
+    // moved to .revoked (account data access blocked → the app closes the account DB).
+    @Test func confirmedTransportRevocationRevokesTheSession() async throws {
+        let (coordinator, _, store, _) = makeStack()
+        _ = await coordinator.signIn(.development(identity: "dev-client-001"))
+        let generation = await coordinator.generation
+        #expect(try await store.loadCurrent() != nil)
+
+        let phase = await coordinator.revocationReported(forGeneration: generation)
+        guard case .revoked = phase else { Issue.record("expected .revoked, got \(phase)"); return }
+        #expect(await coordinator.phase.allowsAccountDataAccess == false)   // DB access blocked
+        #expect(await coordinator.generation == generation &+ 1)           // outstanding work invalidated
+        #expect(try await store.loadCurrent() == nil)                       // credentials deleted
+    }
+
+    // `.unknown` NEVER means revoked (offline can't claim current revocation knowledge).
+    @Test func unknownRevocationNeverRevokes() async throws {
+        let (coordinator, provider, _, _) = makeStack()
+        _ = await coordinator.signIn(.development(identity: "dev-client-001"))
+        await provider.set(revocation: .unknown)
+        await coordinator.checkRevocationAfterReconnect()
+        guard case .authenticated = await coordinator.phase else {
+            Issue.record("unknown must not revoke"); return
+        }
+    }
+
+    // A delayed prior-session revocation (stale generation) is ignored — it can never
+    // revoke the now-active session.
+    @Test func delayedPriorSessionRevocationIsIgnored() async throws {
+        let (coordinator, _, store, _) = makeStack()
+        _ = await coordinator.signIn(.development(identity: "dev-client-001"))
+        let currentGeneration = await coordinator.generation
+
+        // A revocation response carrying a PRIOR session's generation must be ignored — it
+        // can never revoke the now-active session.
+        let phase = await coordinator.revocationReported(forGeneration: currentGeneration &- 1)
+        guard case .authenticated = phase else { Issue.record("stale revocation must be ignored"); return }
+        #expect(await coordinator.generation == currentGeneration)   // unchanged
+        #expect(try await store.loadCurrent() != nil)                 // credentials intact
+    }
+}
