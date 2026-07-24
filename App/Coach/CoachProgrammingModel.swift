@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import MazidiContent
 import MazidiDomain
 import MazidiFoundations
 import MazidiSync
@@ -21,6 +22,15 @@ final class CoachProgrammingModel {
     init(environment: CoachEnvironment) {
         self.env = environment
     }
+
+    // MARK: - Catalogue access for the editor/picker (ADR-0011)
+
+    /// Client-content copy (display names, aliases, draft coaching content) by slug.
+    var content: any ExerciseContentProviding { env.content }
+    /// Catalogue query store: search/filter/vocabularies over canonical exercises.
+    var catalogueStore: ExerciseCatalogueStore { env.catalogueStore }
+    /// Media resolver for picker/preview posters (bundled tier + honest fallback).
+    var media: any MediaResolving { env.media }
 
     // MARK: - Loading
 

@@ -1,0 +1,6 @@
+#include "Base.xcconfig"
+
+// Release — production builds. The production media origin is injected via the release
+// configuration when the content backend exists (R-02); until then MEDIA_BASE_URL stays
+// empty and the remote media tier is inert (ADR-0011 §4 tier 3). Never commit a real
+// host/secret inline.

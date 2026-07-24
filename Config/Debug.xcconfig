@@ -1,0 +1,5 @@
+#include "Base.xcconfig"
+
+// Debug — local development builds. No remote media origin: media resolves from the
+// bounded validated cache and the bundled representative set only (ADR-0011 §4).
+// MEDIA_BASE_URL inherits the empty default from Base.xcconfig.

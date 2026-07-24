@@ -102,7 +102,10 @@ final class ClientEnvironment {
         accountID: AccountID,
         clock: any AppClock = SystemClock(),
         content: any ExerciseContentProviding = FixtureExerciseContentProvider(),
-        media: any MediaResolving = BundleMediaResolver(),
+        // Composed catalogue-backed resolver (ADR-0011 §4): validated cache → bundled
+        // representative → inert remote. The 8 fixture slugs resolve at the bundled tier
+        // exactly as before (cache empty, no remote origin). Tests inject their own.
+        media: any MediaResolving = CatalogueLibrary().mediaResolver(),
         assignedWorkout: AssignedWorkout = ClientFixtures.todaysWorkout,
         store: ClientStore? = nil
     ) {

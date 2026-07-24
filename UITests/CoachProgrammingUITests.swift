@@ -65,6 +65,12 @@ final class CoachProgrammingUITests: XCTestCase {
         confirm.tap()
 
         app.buttons["editor_add_exercise"].tapWhenReady()
+        // Catalogue-backed picker: search narrows the 206-exercise catalogue so the
+        // canonical option becomes hittable, then select it by stable slug identifier.
+        let search = app.textFields["coach_exercise_search"]
+        XCTAssertTrue(search.waitForExistence(timeout: 15), "Catalogue search field should appear")
+        search.tap()
+        search.typeText("barbell squat")
         app.buttons["exercise_option.barbell-squat"].tapWhenReady()
         XCTAssertTrue(app.buttons["editor_exercise_row.barbell-squat"].waitForExistence(timeout: 10),
                       "The exercise should join the draft")

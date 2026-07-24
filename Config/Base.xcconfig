@@ -1,0 +1,17 @@
+// Base build configuration shared by every environment.
+// Environment-specific files (Debug/Staging/Release) #include this and override
+// as needed. Wired to the app target via `configFiles` in project.yml.
+//
+// MEDIA_BASE_URL — origin for exercise media delivery (ADR-0010 §6, ADR-0011 §3/§6).
+// The catalogue/manifest carry only provider-neutral RELATIVE object keys
+// (`exercises/<slug>/<kind>-v<version>.<ext>`); this setting supplies the origin they
+// are joined against at runtime. It is surfaced to the app through the Info.plist key
+// `MediaBaseURL` (see project.yml). EMPTY BY DEFAULT — no CDN exists yet (R-02), so the
+// remote media tier stays honestly inert until a real origin is configured; empty means
+// "remote tier disabled" (ADR-0011 §4 tier 3).
+//
+// NEVER put a credential, signed URL, bucket name, or secret here (CLAUDE.md "Never
+// commit"). NOTE: xcconfig treats `//` as a comment, so a real value like
+// `https://cdn.example` cannot be written inline without escaping — configure a real
+// origin per the deployment runbook when the backend lands, not by hand here.
+MEDIA_BASE_URL =

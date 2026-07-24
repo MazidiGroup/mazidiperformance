@@ -1,5 +1,6 @@
 import Foundation
 import MazidiAuth
+import MazidiContent
 import MazidiDomain
 import MazidiFoundations
 import MazidiPersistence
@@ -31,6 +32,12 @@ final class CoachEnvironment {
     let accountID: AccountID
     let clock: any AppClock
     let content: any ExerciseContentProviding
+    /// Catalogue-backed search/filter/preview store for the exercise picker (ADR-0011 §1),
+    /// joined to the client-content draft for name/alias search.
+    let catalogueStore: ExerciseCatalogueStore
+    /// Composed media resolver for picker/preview posters (bundled tier resolves the
+    /// representative set; the rest show the honest name+icon fallback).
+    let media: any MediaResolving
     let store: CoachStore
     let storeHealth: ClientEnvironment.StoreHealth
 
@@ -40,11 +47,14 @@ final class CoachEnvironment {
     init(
         accountID: AccountID,
         clock: any AppClock = SystemClock(),
-        content: any ExerciseContentProviding = FixtureExerciseContentProvider()
+        content: CatalogueContentProvider = CatalogueContentProvider()
     ) {
         self.accountID = accountID
         self.clock = clock
         self.content = content
+        let library = CatalogueLibrary()
+        self.catalogueStore = library.catalogueStore(naming: content)
+        self.media = library.mediaResolver()
 
         let log = AppLog(category: "persistence")
         #if DEBUG

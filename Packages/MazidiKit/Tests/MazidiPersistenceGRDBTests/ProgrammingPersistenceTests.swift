@@ -90,6 +90,46 @@ private func op(kind: SyncOperation.Kind, aggregate: UUID, seq: Int) -> SyncOper
         try reopened.close()
     }
 
+    /// Relaunch preserves canonical exercise IDs and frozen labels across the durable
+    /// draft → version → assignment snapshots (ADR-0011 §2). Nothing is rewritten on reopen.
+    @Test func reopenPreservesCanonicalSlugsAndFrozenLabels() async throws {
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("mazidi-canon-\(UUID().uuidString)", isDirectory: true)
+        var template = WorkoutTemplate(
+            draft: WorkoutTemplateContent(title: "Canon", exercises: [
+                PrescribedExercise(
+                    slug: "barbell-squat", order: 0,
+                    prescription: .repsAndLoad(sets: 3, reps: 5...8, loadKg: 80),
+                    selectedLabel: "Barbell Squat"
+                ),
+            ]),
+            updatedAt: t0
+        )
+        let version = try template.publish(at: t0)
+        let assignment = WorkoutAssignment(version: version, assigneeAccountRef: "dev-client-001", assignedAt: t0)
+        do {
+            let store = try GRDBStore.open(directory: dir)
+            try await store.publishAtomically(template: template, version: version, enqueueing: [])
+            try await store.saveAssignmentAtomically(
+                assignment, enqueueing: [op(kind: .assignmentCreated, aggregate: assignment.id.rawValue, seq: 0)]
+            )
+            try store.close()
+        }
+        let reopened = try GRDBStore.open(directory: dir)
+        let restoredTemplate = try await reopened.template(id: template.id)
+        #expect(restoredTemplate?.draft.exercises.first?.slug == "barbell-squat")
+        #expect(restoredTemplate?.draft.exercises.first?.selectedLabel == "Barbell Squat")
+        let restoredVersion = try await reopened.version(id: version.id)
+        #expect(restoredVersion?.content.exercises.first?.slug == "barbell-squat")
+        #expect(restoredVersion?.content.exercises.first?.selectedLabel == "Barbell Squat")
+        let restoredAssignment = try await reopened.assignment(id: assignment.id)
+        #expect(restoredAssignment?.content.exercises.first?.slug == "barbell-squat")
+        #expect(restoredAssignment?.content.exercises.first?.selectedLabel == "Barbell Squat")
+        // The executable snapshot keeps the canonical slug for the client session.
+        #expect(try restoredAssignment?.assignedWorkout().allExercises.first?.slug == "barbell-squat")
+        try reopened.close()
+    }
+
     @Test func atomicRollbackAcrossProgrammingWrites() async throws {
         let store = try makeStore()
         var template = draftTemplate()

@@ -64,6 +64,12 @@ public struct PrescribedExercise: Sendable, Codable, Equatable, Identifiable {
     public var coachNotes: String?
     /// Coach-ordered approved substitutions (7e).
     public var approvedAlternatives: [ExerciseSlug]
+    /// Display label frozen at the moment the coach selected this exercise from the
+    /// catalogue (ADR-0011 §2). The slug is the stable identity; this preserves exactly
+    /// what the coach saw, so a later client-content displayName change never silently
+    /// rewrites the coach's draft/version. Optional and additive: older drafts decode with
+    /// nil and fall back to the live displayName/slug. Never used to resolve media.
+    public var selectedLabel: String?
 
     public init(
         id: Identifier<PrescribedExercise> = .init(),
@@ -74,7 +80,8 @@ public struct PrescribedExercise: Sendable, Codable, Equatable, Identifiable {
         tempo: String? = nil,
         effortAnnotation: String? = nil,
         coachNotes: String? = nil,
-        approvedAlternatives: [ExerciseSlug] = []
+        approvedAlternatives: [ExerciseSlug] = [],
+        selectedLabel: String? = nil
     ) {
         self.id = id
         self.slug = slug
@@ -85,6 +92,7 @@ public struct PrescribedExercise: Sendable, Codable, Equatable, Identifiable {
         self.effortAnnotation = effortAnnotation
         self.coachNotes = coachNotes
         self.approvedAlternatives = approvedAlternatives
+        self.selectedLabel = selectedLabel
     }
 }
 
