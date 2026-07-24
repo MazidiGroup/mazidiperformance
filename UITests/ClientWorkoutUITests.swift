@@ -9,25 +9,33 @@ final class ClientWorkoutUITests: XCTestCase {
         continueAfterFailure = false
     }
 
+    /// Launch with the DEBUG ephemeral store (fresh in-memory database per process) so
+    /// journeys never see state from a previous test or run. The relaunch-restoration
+    /// test opts into a durable store via `MAZIDI_STORE_DIR` instead.
     @MainActor
-    private func launchAsClient() -> XCUIApplication {
+    private func launchAsClient(environment: [String: String] = ["MAZIDI_STORE_MODE": "ephemeral"]) -> XCUIApplication {
         let app = XCUIApplication()
+        app.launchEnvironment.merge(environment) { _, new in new }
         app.launch()
-        // Dev role affordance (DEBUG) — real auth arrives with its backend (R-01).
+        selectClientRole(in: app, expecting: "today_start_workout")
+        return app
+    }
+
+    /// Select the dev Client role and wait for Today to show `expectedID`. The very first
+    /// cold-launch tap can land after the control is hittable but before SwiftUI has wired
+    /// its action, so it is silently dropped — retry until Today actually appears (a
+    /// bounded condition wait, not a fixed delay) and assert the role switch happened.
+    @MainActor
+    private func selectClientRole(in app: XCUIApplication, expecting expectedID: String) {
         let devEntry = app.buttons["dev_continue_client"]
         XCTAssertTrue(devEntry.waitForExistence(timeout: 20), "Client dev entry should appear")
-        // The very first cold-launch tap can land after the control is hittable but before
-        // SwiftUI has wired its action, so it is silently dropped and the role never
-        // switches. Retry until Today actually appears — a bounded condition wait, not a
-        // fixed delay — and assert the role switch happened.
-        let todayEntry = app.buttons["today_start_workout"]
+        let todayEntry = app.buttons[expectedID]
         for _ in 0..<3 where !todayEntry.exists {
             devEntry.tap()
             if todayEntry.waitForExistence(timeout: 8) { break }
         }
         XCTAssertTrue(todayEntry.waitForExistence(timeout: 8),
-                      "Client Today should appear after selecting the dev client role")
-        return app
+                      "Client Today should show \(expectedID) after selecting the dev client role")
     }
 
     /// Opening the assigned workout: Today → overview → begin → active workout.
@@ -115,6 +123,51 @@ final class ClientWorkoutUITests: XCTestCase {
                       || app.buttons["complete_done_button"].waitForExistence(timeout: 2),
                       "Completion summary should appear")
         if app.buttons["complete_done_button"].exists { app.buttons["complete_done_button"].tapWhenReady() }
+    }
+
+    /// Relaunch restoration (5b, GRDB milestone): a terminated app relaunches with the
+    /// unfinished workout offered for resume; after completion, a further relaunch must
+    /// NOT offer it again. Uses a unique durable store directory so the journey is
+    /// isolated from other tests and from the developer's real database.
+    @MainActor
+    func testRelaunchRestoresUnfinishedWorkoutAndCompletionIsFinal() {
+        let storeDir = NSTemporaryDirectory() + "mazidi-uitest-\(UUID().uuidString)"
+        let durable = ["MAZIDI_STORE_DIR": storeDir]
+
+        // Launch 1: start the workout and record one set, then terminate mid-session.
+        let app = launchAsClient(environment: durable)
+        app.buttons["today_start_workout"].tapWhenReady()
+        app.buttons["overview_begin_button"].tapWhenReady()
+        let logButton = app.buttons["set_entry_log_button"]
+        XCTAssertTrue(logButton.waitForExistence(timeout: 15), "Set-entry form should be present")
+        logButton.tapWhenReady()
+        XCTAssertTrue(app.otherElements["set_entry_row.0"].waitForExistence(timeout: 15),
+                      "The set should be recorded before termination")
+        app.terminate()
+
+        // Launch 2: the unfinished session is offered for resume — nothing lost.
+        let relaunched = XCUIApplication()
+        relaunched.launchEnvironment["MAZIDI_STORE_DIR"] = storeDir
+        relaunched.launch()
+        selectClientRole(in: relaunched, expecting: "today_resume_workout")
+        relaunched.buttons["today_resume_workout"].tapWhenReady()
+        XCTAssertTrue(relaunched.staticTexts["active_exercise_title"].waitForExistence(timeout: 15),
+                      "Resume should land in the active workout")
+        XCTAssertTrue(relaunched.otherElements["set_entry_row.0"].waitForExistence(timeout: 15),
+                      "The recorded set should have survived the relaunch")
+
+        // Complete, then relaunch again: the finished session must not be resumable.
+        relaunched.buttons["active_complete_button"].tapWhenReady()
+        XCTAssertTrue(relaunched.buttons["complete_done_button"].waitForExistence(timeout: 15),
+                      "Completion should appear")
+        relaunched.terminate()
+
+        let final = XCUIApplication()
+        final.launchEnvironment["MAZIDI_STORE_DIR"] = storeDir
+        final.launch()
+        selectClientRole(in: final, expecting: "today_start_workout")
+        XCTAssertFalse(final.buttons["today_resume_workout"].exists,
+                       "A completed session must never be offered as resumable")
     }
 }
 
