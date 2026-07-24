@@ -8,7 +8,11 @@ import MazidiSync
 /// crash-safe persistence (ADR-0003). Every mutation writes the session snapshot and its
 /// sync operation atomically; audit events accompany consequential transitions (ADR-0006).
 public actor WorkoutSessionService {
-    public enum ServiceError: Error { case noActiveSession }
+    public enum ServiceError: Error {
+        case noActiveSession
+        case programmingUnavailable
+        case assignmentNotFound
+    }
 
     private let store: StoreBundle
     private let clock: any AppClock
@@ -16,22 +20,26 @@ public actor WorkoutSessionService {
 
     private var session: WorkoutSession?
 
-    /// Bundles the three store roles so one object can satisfy them — the in-memory
+    /// Bundles the store roles so one object can satisfy them — the in-memory
     /// reference store and the durable GRDB store both do (one database, one
-    /// transaction scope).
+    /// transaction scope). `programming` is optional: fixture-only compositions
+    /// (no assignments) omit it.
     public struct StoreBundle: Sendable {
         public let sessions: any WorkoutSessionRepository
         public let operations: SyncOutboxStore
         public let audit: any AuditEventStore
+        public let programming: ProgrammingStore?
 
         public init(
             sessions: any WorkoutSessionRepository,
             operations: SyncOutboxStore,
-            audit: any AuditEventStore
+            audit: any AuditEventStore,
+            programming: ProgrammingStore? = nil
         ) {
             self.sessions = sessions
             self.operations = operations
             self.audit = audit
+            self.programming = programming
         }
     }
 
@@ -65,6 +73,46 @@ public actor WorkoutSessionService {
         let now = clock.now()
         try newSession.start(at: now)
         try await persist(newSession, kind: .workoutSessionStarted, auditKind: .workoutSessionStarted)
+        session = newSession
+        return newSession
+    }
+
+    /// Start a session executing an assignment (ADR-0009): the version snapshot seeds the
+    /// session (the assignment itself is never mutated by execution), the assignment
+    /// transitions to `started`, and session + assignment + their operations commit in
+    /// ONE transaction.
+    public func startAssignment(_ assignment: WorkoutAssignment, epoch: Int) async throws -> WorkoutSession {
+        guard let programming = store.programming else { throw ServiceError.programmingUnavailable }
+        let workout = try assignment.assignedWorkout()
+        var newSession = WorkoutSession(workout: workout, epoch: epoch, assignmentID: assignment.id)
+        let now = clock.now()
+        try newSession.start(at: now)
+        var transitioned = assignment
+        try transitioned.markStarted()
+
+        let sessionAggregate = newSession.id.rawValue
+        let assignmentAggregate = assignment.id.rawValue
+        let ops = [
+            SyncOperation(
+                kind: .workoutSessionStarted,
+                aggregateID: sessionAggregate,
+                sequence: try await store.operations.nextSequence(forAggregate: sessionAggregate),
+                payload: try JSONEncoder().encode(newSession),
+                enqueuedAt: now
+            ),
+            SyncOperation(
+                kind: .assignmentStatusChanged,
+                aggregateID: assignmentAggregate,
+                sequence: try await store.operations.nextSequence(forAggregate: assignmentAggregate),
+                payload: try JSONEncoder().encode(transitioned),
+                enqueuedAt: now
+            ),
+        ]
+        try await programming.recordAssignmentTransitionAtomically(
+            session: newSession, assignment: transitioned, enqueueing: ops
+        )
+        try await appendAudit(.workoutSessionStarted, subject: "workoutSession:\(newSession.id)")
+        try await appendAudit(.assignmentStarted, subject: "assignment:\(assignment.id)")
         session = newSession
         return newSession
     }
@@ -152,7 +200,50 @@ public actor WorkoutSessionService {
 
     public func complete() async throws -> WorkoutSession {
         guard var s = session else { throw ServiceError.noActiveSession }
-        try s.complete(at: clock.now())
+        let now = clock.now()
+        try s.complete(at: now)
+
+        // Assignment-linked completion (ADR-0009): session + assignment status +
+        // operations in ONE transaction. Duplicate completion (e.g. replay after a
+        // relaunch race) is refused by the domain guard — the session still completes,
+        // the assignment record is simply left as-is.
+        if let assignmentID = s.assignmentID, let programming = store.programming {
+            guard var assignment = try await programming.assignment(id: assignmentID) else {
+                throw ServiceError.assignmentNotFound
+            }
+            do {
+                try assignment.markCompleted(sessionID: s.id, at: now)
+                let sessionAggregate = s.id.rawValue
+                let assignmentAggregate = assignment.id.rawValue
+                let ops = [
+                    SyncOperation(
+                        kind: .workoutSessionCompleted,
+                        aggregateID: sessionAggregate,
+                        sequence: try await store.operations.nextSequence(forAggregate: sessionAggregate),
+                        payload: try JSONEncoder().encode(s),
+                        enqueuedAt: now
+                    ),
+                    SyncOperation(
+                        kind: .assignmentStatusChanged,
+                        aggregateID: assignmentAggregate,
+                        sequence: try await store.operations.nextSequence(forAggregate: assignmentAggregate),
+                        payload: try JSONEncoder().encode(assignment),
+                        enqueuedAt: now
+                    ),
+                ]
+                try await programming.recordAssignmentTransitionAtomically(
+                    session: s, assignment: assignment, enqueueing: ops
+                )
+                try await appendAudit(.workoutSessionCompleted, subject: "workoutSession:\(s.id)")
+                try await appendAudit(.assignmentCompleted, subject: "assignment:\(assignment.id)")
+            } catch WorkoutAssignment.TransitionError.alreadyCompleted {
+                // Idempotent: never double-complete the assignment; persist the session.
+                try await persist(s, kind: .workoutSessionCompleted, auditKind: .workoutSessionCompleted)
+            }
+            session = s
+            return s
+        }
+
         try await persist(s, kind: .workoutSessionCompleted, auditKind: .workoutSessionCompleted)
         session = s
         return s
@@ -171,6 +262,17 @@ public actor WorkoutSessionService {
     }
 
     // MARK: - Atomic persist + enqueue
+
+    private func appendAudit(_ kind: AuditEvent.Kind, subject: String) async throws {
+        let previous = try await store.audit.latestHash()
+        try await store.audit.append(AuditEvent(
+            kind: kind,
+            actorID: actorID,
+            subjectDescription: subject,
+            occurredAt: clock.now(),
+            previousHash: previous
+        ))
+    }
 
     private func persist(
         _ s: WorkoutSession,

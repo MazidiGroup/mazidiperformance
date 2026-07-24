@@ -74,6 +74,46 @@ public enum GRDBSchema {
             }
         }
 
+        // v2 — coach programming & assignments (ADR-0009). Content columns are JSON
+        // snapshots of coach-authored config (ADR-0007 §3 blob rule). template_version
+        // rows are immutable once written. No FK from assignment to template/version:
+        // client databases receive assignment rows standalone (self-contained snapshot)
+        // via the delivery path; integrity is by construction (immutable snapshots).
+        migrator.registerMigration("v2-coach-programming") { db in
+            try db.create(table: "workout_template") { t in
+                t.column("id", .text).primaryKey()
+                t.column("draft_json", .blob).notNull()
+                t.column("published_version_count", .integer).notNull()
+                t.column("updated_at", .datetime).notNull()
+            }
+
+            try db.create(table: "template_version") { t in
+                t.column("id", .text).primaryKey()
+                t.column("template_id", .text).notNull().indexed()
+                t.column("version_number", .integer).notNull()
+                t.column("content_json", .blob).notNull()
+                t.column("published_at", .datetime).notNull()
+                t.uniqueKey(["template_id", "version_number"])
+            }
+
+            try db.create(table: "workout_assignment") { t in
+                t.column("id", .text).primaryKey()
+                t.column("template_id", .text).notNull()
+                t.column("version_id", .text).notNull()
+                t.column("version_number", .integer).notNull()
+                t.column("content_json", .blob).notNull()
+                t.column("assignee_ref", .text).notNull().indexed()
+                t.column("assigned_at", .datetime).notNull()
+                t.column("status", .text).notNull().indexed()
+                t.column("completed_session_id", .text)
+                t.column("completed_at", .datetime)
+            }
+
+            try db.alter(table: "workout_session") { t in
+                t.add(column: "assignment_id", .text)
+            }
+        }
+
         return migrator
     }
 }

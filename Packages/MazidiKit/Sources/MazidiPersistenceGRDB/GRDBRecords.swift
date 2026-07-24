@@ -29,6 +29,7 @@ struct WorkoutSessionRecord: Codable, FetchableRecord, PersistableRecord {
     var currentExerciseId: String?
     var restJson: Data?
     var workoutJson: Data
+    var assignmentId: String?
 
     enum CodingKeys: String, CodingKey {
         case id, epoch, phase
@@ -37,6 +38,7 @@ struct WorkoutSessionRecord: Codable, FetchableRecord, PersistableRecord {
         case currentExerciseId = "current_exercise_id"
         case restJson = "rest_json"
         case workoutJson = "workout_json"
+        case assignmentId = "assignment_id"
     }
 
     init(session: WorkoutSession) throws {
@@ -48,6 +50,7 @@ struct WorkoutSessionRecord: Codable, FetchableRecord, PersistableRecord {
         currentExerciseId = session.currentExerciseID?.rawValue.uuidString
         restJson = try session.activeRest.map { try jsonEncoder.encode($0) }
         workoutJson = try jsonEncoder.encode(session.workout)
+        assignmentId = session.assignmentID?.rawValue.uuidString
     }
 
     func toDomain(entries: [SetEntry], swaps: [Identifier<AssignedExercise>: ExerciseSlug]) throws -> WorkoutSession {
@@ -72,7 +75,157 @@ struct WorkoutSessionRecord: Codable, FetchableRecord, PersistableRecord {
                 }
                 return Identifier<AssignedExercise>(u)
             },
-            activeRest: try restJson.map { try jsonDecoder.decode(RestTimer.self, from: $0) }
+            activeRest: try restJson.map { try jsonDecoder.decode(RestTimer.self, from: $0) },
+            assignmentID: try assignmentId.map {
+                guard let u = UUID(uuidString: $0) else {
+                    throw RecordMappingError.badUUID(table: Self.databaseTableName, column: "assignment_id", value: $0)
+                }
+                return Identifier<WorkoutAssignment>(u)
+            }
+        )
+    }
+}
+
+// MARK: - workout_template / template_version / workout_assignment (ADR-0009)
+
+struct WorkoutTemplateRecord: Codable, FetchableRecord, PersistableRecord {
+    static let databaseTableName = "workout_template"
+
+    var id: String
+    var draftJson: Data
+    var publishedVersionCount: Int
+    var updatedAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case draftJson = "draft_json"
+        case publishedVersionCount = "published_version_count"
+        case updatedAt = "updated_at"
+    }
+
+    init(template: WorkoutTemplate) throws {
+        id = template.id.rawValue.uuidString
+        draftJson = try jsonEncoder.encode(template.draft)
+        publishedVersionCount = template.publishedVersionCount
+        updatedAt = template.updatedAt
+    }
+
+    func toDomain() throws -> WorkoutTemplate {
+        guard let uuid = UUID(uuidString: id) else {
+            throw RecordMappingError.badUUID(table: Self.databaseTableName, column: "id", value: id)
+        }
+        return WorkoutTemplate(
+            id: Identifier<WorkoutTemplate>(uuid),
+            draft: try jsonDecoder.decode(WorkoutTemplateContent.self, from: draftJson),
+            publishedVersionCount: publishedVersionCount,
+            updatedAt: updatedAt
+        )
+    }
+}
+
+struct TemplateVersionRecord: Codable, FetchableRecord, PersistableRecord {
+    static let databaseTableName = "template_version"
+
+    var id: String
+    var templateId: String
+    var versionNumber: Int
+    var contentJson: Data
+    var publishedAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case templateId = "template_id"
+        case versionNumber = "version_number"
+        case contentJson = "content_json"
+        case publishedAt = "published_at"
+    }
+
+    init(version: WorkoutTemplateVersion) throws {
+        id = version.id.rawValue.uuidString
+        templateId = version.templateID.rawValue.uuidString
+        versionNumber = version.versionNumber
+        contentJson = try jsonEncoder.encode(version.content)
+        publishedAt = version.publishedAt
+    }
+
+    func toDomain() throws -> WorkoutTemplateVersion {
+        guard let uuid = UUID(uuidString: id), let templateUUID = UUID(uuidString: templateId) else {
+            throw RecordMappingError.badUUID(table: Self.databaseTableName, column: "id/template_id", value: id)
+        }
+        return WorkoutTemplateVersion(
+            id: Identifier<WorkoutTemplateVersion>(uuid),
+            templateID: Identifier<WorkoutTemplate>(templateUUID),
+            versionNumber: versionNumber,
+            content: try jsonDecoder.decode(WorkoutTemplateContent.self, from: contentJson),
+            publishedAt: publishedAt
+        )
+    }
+}
+
+struct WorkoutAssignmentRecord: Codable, FetchableRecord, PersistableRecord {
+    static let databaseTableName = "workout_assignment"
+
+    var id: String
+    var templateId: String
+    var versionId: String
+    var versionNumber: Int
+    var contentJson: Data
+    var assigneeRef: String
+    var assignedAt: Date
+    var status: String
+    var completedSessionId: String?
+    var completedAt: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case id, status
+        case templateId = "template_id"
+        case versionId = "version_id"
+        case versionNumber = "version_number"
+        case contentJson = "content_json"
+        case assigneeRef = "assignee_ref"
+        case assignedAt = "assigned_at"
+        case completedSessionId = "completed_session_id"
+        case completedAt = "completed_at"
+    }
+
+    init(assignment: WorkoutAssignment) throws {
+        id = assignment.id.rawValue.uuidString
+        templateId = assignment.templateID.rawValue.uuidString
+        versionId = assignment.versionID.rawValue.uuidString
+        versionNumber = assignment.versionNumber
+        contentJson = try jsonEncoder.encode(assignment.content)
+        assigneeRef = assignment.assigneeAccountRef
+        assignedAt = assignment.assignedAt
+        status = assignment.status.rawValue
+        completedSessionId = assignment.completedSessionID?.rawValue.uuidString
+        completedAt = assignment.completedAt
+    }
+
+    func toDomain() throws -> WorkoutAssignment {
+        guard let uuid = UUID(uuidString: id),
+              let templateUUID = UUID(uuidString: templateId),
+              let versionUUID = UUID(uuidString: versionId) else {
+            throw RecordMappingError.badUUID(table: Self.databaseTableName, column: "id/template_id/version_id", value: id)
+        }
+        guard let status = WorkoutAssignment.Status(rawValue: status) else {
+            throw RecordMappingError.unknownEnumValue(table: Self.databaseTableName, column: "status", value: status)
+        }
+        return WorkoutAssignment(
+            restoring: Identifier<WorkoutAssignment>(uuid),
+            templateID: Identifier<WorkoutTemplate>(templateUUID),
+            versionID: Identifier<WorkoutTemplateVersion>(versionUUID),
+            versionNumber: versionNumber,
+            content: try jsonDecoder.decode(WorkoutTemplateContent.self, from: contentJson),
+            assigneeAccountRef: assigneeRef,
+            assignedAt: assignedAt,
+            status: status,
+            completedSessionID: try completedSessionId.map {
+                guard let u = UUID(uuidString: $0) else {
+                    throw RecordMappingError.badUUID(table: Self.databaseTableName, column: "completed_session_id", value: $0)
+                }
+                return Identifier<WorkoutSession>(u)
+            },
+            completedAt: completedAt
         )
     }
 }

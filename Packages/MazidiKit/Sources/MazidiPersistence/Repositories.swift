@@ -41,6 +41,39 @@ public protocol SyncOperationStore<Operation>: Sendable {
     func nextSequence(forAggregate aggregateID: UUID) async throws -> Int
 }
 
+/// Coach programming + assignment persistence (ADR-0009). Generic over the outbox
+/// operation like `SyncOperationStore`, so every mutating write can commit its queued
+/// operations in the same transaction (ADR-0003 invariant).
+public protocol ProgrammingRepository<Operation>: Sendable {
+    associatedtype Operation: OutboxOperation
+
+    // Templates (coach drafts) & immutable versions
+    func saveTemplateAtomically(_ template: WorkoutTemplate, enqueueing operations: [Operation]) async throws
+    func template(id: Identifier<WorkoutTemplate>) async throws -> WorkoutTemplate?
+    func allTemplates() async throws -> [WorkoutTemplate]
+    /// Publication: updated template (bumped version count) + immutable version row +
+    /// operations, in one transaction. Versions are never updated afterwards.
+    func publishAtomically(
+        template: WorkoutTemplate,
+        version: WorkoutTemplateVersion,
+        enqueueing operations: [Operation]
+    ) async throws
+    func version(id: Identifier<WorkoutTemplateVersion>) async throws -> WorkoutTemplateVersion?
+    func versions(templateID: Identifier<WorkoutTemplate>) async throws -> [WorkoutTemplateVersion]
+
+    // Assignments
+    func saveAssignmentAtomically(_ assignment: WorkoutAssignment, enqueueing operations: [Operation]) async throws
+    func assignment(id: Identifier<WorkoutAssignment>) async throws -> WorkoutAssignment?
+    func allAssignments() async throws -> [WorkoutAssignment]
+    /// Assignment lifecycle transition + the session executing it + operations, in one
+    /// transaction (start and completion linkage, ADR-0009).
+    func recordAssignmentTransitionAtomically(
+        session: WorkoutSession,
+        assignment: WorkoutAssignment,
+        enqueueing operations: [Operation]
+    ) async throws
+}
+
 public protocol AuditEventStore: Sendable {
     func append(_ event: AuditEvent) async throws
     func latestHash() async throws -> String
@@ -62,11 +95,14 @@ public func auditChainHash(of event: AuditEvent) -> String {
 
 // MARK: - In-memory reference implementation
 
-public actor InMemoryStore<Operation: OutboxOperation>: WorkoutSessionRepository, SyncOperationStore, AuditEventStore {
+public actor InMemoryStore<Operation: OutboxOperation>: WorkoutSessionRepository, SyncOperationStore, AuditEventStore, ProgrammingRepository {
     private var sessions: [Identifier<WorkoutSession>: WorkoutSession] = [:]
     private var operations: [Operation.ID: Operation] = [:]
     private var operationOrder: [Operation.ID] = []
     private var auditEvents: [AuditEvent] = []
+    private var templates: [Identifier<WorkoutTemplate>: WorkoutTemplate] = [:]
+    private var templateVersions: [Identifier<WorkoutTemplateVersion>: WorkoutTemplateVersion] = [:]
+    private var assignments: [Identifier<WorkoutAssignment>: WorkoutAssignment] = [:]
 
     /// Test hook: when set, the next `saveAtomically` throws after doing nothing —
     /// simulating a crash/power-loss at the transaction boundary.
@@ -136,6 +172,71 @@ public actor InMemoryStore<Operation: OutboxOperation>: WorkoutSessionRepository
             .map(\.sequence)
             .max()
         return (existing ?? -1) + 1
+    }
+
+    // ProgrammingRepository
+
+    private func failIfRequested() throws {
+        if failNextAtomicWrite {
+            failNextAtomicWrite = false
+            throw SimulatedCrash()
+        }
+    }
+
+    public func saveTemplateAtomically(_ template: WorkoutTemplate, enqueueing newOperations: [Operation]) async throws {
+        try failIfRequested()
+        templates[template.id] = template
+        for op in newOperations { operations[op.id] = op; operationOrder.append(op.id) }
+    }
+
+    public func template(id: Identifier<WorkoutTemplate>) async throws -> WorkoutTemplate? { templates[id] }
+
+    public func allTemplates() async throws -> [WorkoutTemplate] {
+        templates.values.sorted { $0.updatedAt > $1.updatedAt }
+    }
+
+    public func publishAtomically(
+        template: WorkoutTemplate,
+        version: WorkoutTemplateVersion,
+        enqueueing newOperations: [Operation]
+    ) async throws {
+        try failIfRequested()
+        templates[template.id] = template
+        templateVersions[version.id] = version
+        for op in newOperations { operations[op.id] = op; operationOrder.append(op.id) }
+    }
+
+    public func version(id: Identifier<WorkoutTemplateVersion>) async throws -> WorkoutTemplateVersion? {
+        templateVersions[id]
+    }
+
+    public func versions(templateID: Identifier<WorkoutTemplate>) async throws -> [WorkoutTemplateVersion] {
+        templateVersions.values.filter { $0.templateID == templateID }.sorted { $0.versionNumber < $1.versionNumber }
+    }
+
+    public func saveAssignmentAtomically(_ assignment: WorkoutAssignment, enqueueing newOperations: [Operation]) async throws {
+        try failIfRequested()
+        assignments[assignment.id] = assignment
+        for op in newOperations { operations[op.id] = op; operationOrder.append(op.id) }
+    }
+
+    public func assignment(id: Identifier<WorkoutAssignment>) async throws -> WorkoutAssignment? {
+        assignments[id]
+    }
+
+    public func allAssignments() async throws -> [WorkoutAssignment] {
+        assignments.values.sorted { $0.assignedAt > $1.assignedAt }
+    }
+
+    public func recordAssignmentTransitionAtomically(
+        session: WorkoutSession,
+        assignment: WorkoutAssignment,
+        enqueueing newOperations: [Operation]
+    ) async throws {
+        try failIfRequested()
+        sessions[session.id] = session
+        assignments[assignment.id] = assignment
+        for op in newOperations { operations[op.id] = op; operationOrder.append(op.id) }
     }
 
     // AuditEventStore

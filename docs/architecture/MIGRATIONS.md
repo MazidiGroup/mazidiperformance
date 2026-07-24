@@ -51,3 +51,16 @@ Indexes: `set_entry(session_id)`, `outbox_operation(aggregate_id, sequence)`,
 Not persisted deliberately: SwiftUI navigation stacks, sheet visibility, sync engine
 in-flight UI status (recomputed honestly from `outbox_operation` rows on launch), and
 anything derivable from the rows above.
+
+## v2 — coach programming & assignments (2026-07-24, ADR-0009)
+
+| Table | Why it exists |
+|---|---|
+| `workout_template` | One row per coach draft: `id` PK, `draft_json` (coach-authored content snapshot — ADR-0007 §3 blob rule; no query reaches inside), `published_version_count`, `updated_at`. Coach-owned; lives only in the coach's account database. |
+| `template_version` | **Immutable** publication snapshots: `id` PK, `template_id` (indexed), `version_number`, `content_json`, `published_at`. **UNIQUE(template_id, version_number)** — a duplicate publication is rejected, a frozen row is never overwritten (INSERT-only in code). |
+| `workout_assignment` | One row per client assignment: version reference (`template_id`, `version_id`, `version_number`) plus a self-contained `content_json` snapshot, `assignee_ref` (opaque account ref, indexed), `assigned_at`, `status` (queued/started/completed/cancelled, indexed), `completed_session_id`, `completed_at`. Self-contained by design: client databases receive assignment rows standalone (no FK to template tables, which exist only coach-side). |
+| `workout_session.assignment_id` | New nullable column: links an executing session to its assignment for completion linkage; old rows read back as NULL safely. |
+
+Transactions: draft saves, publications (template + version + ops), assignment saves, and
+assignment transitions (session + assignment + ops) each commit atomically with their
+outbox operations, extending the ADR-0003 invariant to programming writes.
