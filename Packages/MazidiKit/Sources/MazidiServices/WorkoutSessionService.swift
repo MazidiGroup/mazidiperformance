@@ -10,15 +10,16 @@ import MazidiSync
 public actor WorkoutSessionService {
     public enum ServiceError: Error { case noActiveSession }
 
-    private let store: InMemoryStoreBundle
+    private let store: StoreBundle
     private let clock: any AppClock
     private let actorID: UUID
 
     private var session: WorkoutSession?
 
-    /// Bundles the three store roles so one object can satisfy them (as InMemoryStore does;
-    /// the GRDB adapter will too — one database, one transaction scope).
-    public struct InMemoryStoreBundle: Sendable {
+    /// Bundles the three store roles so one object can satisfy them — the in-memory
+    /// reference store and the durable GRDB store both do (one database, one
+    /// transaction scope).
+    public struct StoreBundle: Sendable {
         public let sessions: any WorkoutSessionRepository
         public let operations: SyncOutboxStore
         public let audit: any AuditEventStore
@@ -34,7 +35,7 @@ public actor WorkoutSessionService {
         }
     }
 
-    public init(store: InMemoryStoreBundle, clock: any AppClock, actorID: UUID) {
+    public init(store: StoreBundle, clock: any AppClock, actorID: UUID) {
         self.store = store
         self.clock = clock
         self.actorID = actorID

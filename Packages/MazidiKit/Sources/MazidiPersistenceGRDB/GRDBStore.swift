@@ -77,18 +77,19 @@ public final class GRDBStore: @unchecked Sendable {
     }
 
     private static func makePool(at url: URL) throws -> DatabasePool {
-        var config = Configuration()
+        let pool = try DatabasePool(path: url.path)
         #if os(iOS)
-        // iOS Data Protection (ADR-0002): available after first unlock so background
-        // sync can run. SQLCipher-style encryption remains pending DL-07.
-        config.prepareDatabase { db in
-            try FileManager.default.setAttributes(
+        // iOS Data Protection (ADR-0002): complete-until-first-unlock so background sync
+        // can run after reboot. Best-effort assertion of the class we document — iOS
+        // already applies this class to app files by default. SQLCipher-style encryption
+        // remains pending DL-07 (documented, not fabricated).
+        for suffix in ["", "-wal", "-shm"] {
+            try? FileManager.default.setAttributes(
                 [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication],
-                ofItemAtPath: db.path
+                ofItemAtPath: url.path + suffix
             )
         }
         #endif
-        let pool = try DatabasePool(path: url.path, configuration: config)
         try GRDBSchema.migrator().migrate(pool)
         return pool
     }

@@ -112,6 +112,7 @@ final class ClientWorkoutModel {
             if let resumable = try await service.restoreIfNeeded() {
                 session = resumable
                 today = resumable.phase == .completed ? .finished(resumable) : .resume(resumable)
+                restoreEphemeralState(from: resumable)
             } else {
                 today = .ready(env.assignedWorkout)
             }
@@ -121,24 +122,46 @@ final class ClientWorkoutModel {
         }
     }
 
+    /// Mirror persisted restoration state (5b): position, and an in-progress rest whose
+    /// remaining time is computed from timestamps — never restarted. Elapsed rests were
+    /// already normalised away by the service.
+    private func restoreEphemeralState(from restored: WorkoutSession) {
+        if selectedExerciseID == nil {
+            selectedExerciseID = restored.currentExerciseID
+        }
+        if restTimer == nil, let rest = restored.activeRest {
+            restTimer = rest
+            restRemaining = rest.remainingSeconds(at: clock.now())
+            if !rest.isPaused { runTicker() }
+        }
+    }
+
     func begin() async {
         do {
             let started = try await service.start(workout: env.assignedWorkout, epoch: 1)
             session = started
             selectedExerciseID = started.workout.allExercises.first?.id
+            persistPosition()
             await afterWrite()
         } catch {
             transientError = Self.message(for: error)
         }
     }
 
-    func resumeWorkout() async {
+    /// Resume (idempotent for restored still-active sessions). Returns success so the
+    /// router only navigates into the active workout when resumption actually held
+    /// (KNOWN_ISSUES M2).
+    @discardableResult
+    func resumeWorkout() async -> Bool {
         do {
             try await service.resume()
             await syncSessionFromService()
+            if let s = session { restoreEphemeralState(from: s) }
             await afterWrite()
+            return true
         } catch {
             transientError = Self.message(for: error)
+            return false
         }
     }
 
@@ -184,13 +207,17 @@ final class ClientWorkoutModel {
 
     // MARK: Navigation between exercises
 
-    func select(_ exercise: AssignedExercise) { selectedExerciseID = exercise.id }
+    func select(_ exercise: AssignedExercise) {
+        selectedExerciseID = exercise.id
+        persistPosition()
+    }
 
     func advanceToNextExercise() {
         guard let current = selectedExercise,
               let idx = orderedExercises.firstIndex(where: { $0.id == current.id }),
               idx + 1 < orderedExercises.count else { return }
         selectedExerciseID = orderedExercises[idx + 1].id
+        persistPosition()
     }
 
     func goToPreviousExercise() {
@@ -198,6 +225,20 @@ final class ClientWorkoutModel {
               let idx = orderedExercises.firstIndex(where: { $0.id == current.id }),
               idx > 0 else { return }
         selectedExerciseID = orderedExercises[idx - 1].id
+        persistPosition()
+    }
+
+    // MARK: Restoration-metadata persistence (position + rest snapshots)
+
+    /// Best-effort snapshot saves (5b): failures here can only lose a restoration *hint*,
+    /// never recorded work — recorded sets persist atomically in `logSet`.
+    private func persistPosition() {
+        let id = selectedExerciseID
+        Task { try? await service.updateCurrentExercise(id) }
+    }
+
+    private func persistRest(_ rest: RestTimer?) {
+        Task { try? await service.updateActiveRest(rest) }
     }
 
     // MARK: Rest timer (domain arithmetic is pure; this only drives ticks)
@@ -206,15 +247,19 @@ final class ClientWorkoutModel {
 
     private func startRest(seconds: Int) {
         guard seconds > 0 else { return }
-        restTimer = RestTimer(durationSeconds: seconds, startedAt: clock.now())
+        let timer = RestTimer(durationSeconds: seconds, startedAt: clock.now())
+        restTimer = timer
         restRemaining = seconds
+        persistRest(timer)
         runTicker()
     }
 
     func extendRest(by seconds: Int) {
         guard var t = restTimer else { return }
-        restTimer = t.extend(by: seconds)
-        restRemaining = restTimer?.remainingSeconds(at: clock.now()) ?? 0
+        let extended = t.extend(by: seconds)
+        restTimer = extended
+        restRemaining = extended.remainingSeconds(at: clock.now())
+        persistRest(extended)
         runTicker()
     }
 
@@ -222,6 +267,7 @@ final class ClientWorkoutModel {
         guard var t = restTimer else { return }
         if t.isPaused { t.resume(at: clock.now()) } else { t.pause(at: clock.now()) }
         restTimer = t
+        persistRest(t)
         if !t.isPaused { runTicker() }
     }
 
@@ -255,6 +301,7 @@ final class ClientWorkoutModel {
         restTicker = nil
         restTimer = nil
         restRemaining = 0
+        persistRest(nil)
     }
 
     // MARK: Sync presentation

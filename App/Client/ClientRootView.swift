@@ -18,7 +18,10 @@ struct ClientRootView: View {
                     ClientHomeView(
                         model: model,
                         onViewWorkout: { path.append(.overview) },
-                        onResume: { Task { await model.resumeWorkout(); path.append(.active) } },
+                        // Navigate into the active workout only when resumption actually
+                        // held (KNOWN_ISSUES M2) — a failed resume surfaces its error and
+                        // stays on Today.
+                        onResume: { Task { if await model.resumeWorkout() { path.append(.active) } } },
                         onViewSummary: { path.append(.complete) }
                     )
                 } else {
