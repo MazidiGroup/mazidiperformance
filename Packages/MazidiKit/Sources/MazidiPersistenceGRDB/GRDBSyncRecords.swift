@@ -3,6 +3,7 @@ import GRDB
 import MazidiDomain
 import MazidiFoundations
 import MazidiPersistence
+import MazidiSync
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  v3 backend-sync metadata rows (ADR-0012). Internal to the GRDB adapter (ADR-0007:
@@ -77,6 +78,56 @@ struct RelationshipRow: Codable, FetchableRecord, PersistableRecord, Equatable {
         case serverVersion = "server_version"
         case localSyncState = "local_sync_state"
     }
+
+    init(id: String, remoteId: String?, coachAccountId: String, clientAccountId: String,
+         status: String, createdAt: Date, acceptedAt: Date?, endedAt: Date?, serverVersion: Int, localSyncState: String) {
+        self.id = id
+        self.remoteId = remoteId
+        self.coachAccountId = coachAccountId
+        self.clientAccountId = clientAccountId
+        self.status = status
+        self.createdAt = createdAt
+        self.acceptedAt = acceptedAt
+        self.endedAt = endedAt
+        self.serverVersion = serverVersion
+        self.localSyncState = localSyncState
+    }
+
+    init(relationship: Relationship) {
+        id = relationship.id.rawValue.uuidString
+        remoteId = nil
+        coachAccountId = relationship.coachAccountRef
+        clientAccountId = relationship.clientAccountRef
+        status = relationship.status.rawValue
+        createdAt = relationship.createdAt
+        acceptedAt = relationship.acceptedAt
+        endedAt = relationship.endedAt
+        serverVersion = relationship.serverVersion
+        localSyncState = relationship.localSyncState.rawValue
+    }
+
+    func toDomain() throws -> Relationship {
+        guard let uuid = UUID(uuidString: id) else {
+            throw RecordMappingError.badUUID(table: Self.databaseTableName, column: "id", value: id)
+        }
+        guard let status = Relationship.Status(rawValue: status) else {
+            throw RecordMappingError.unknownEnumValue(table: Self.databaseTableName, column: "status", value: status)
+        }
+        guard let localSync = Relationship.LocalSyncState(rawValue: localSyncState) else {
+            throw RecordMappingError.unknownEnumValue(table: Self.databaseTableName, column: "local_sync_state", value: localSyncState)
+        }
+        return Relationship(
+            restoring: Identifier<Relationship>(uuid),
+            coachAccountRef: coachAccountId,
+            clientAccountRef: clientAccountId,
+            status: status,
+            createdAt: createdAt,
+            acceptedAt: acceptedAt,
+            endedAt: endedAt,
+            serverVersion: serverVersion,
+            localSyncState: localSync
+        )
+    }
 }
 
 /// Projection of the `workout_assignment` delivery/receipt columns (read/updated without
@@ -133,12 +184,8 @@ extension GRDBStore {
     }
 
     // Relationships
-    func relationship(id: String) async throws -> RelationshipRow? {
+    func relationshipRow(id: String) async throws -> RelationshipRow? {
         try await writer.read { db in try RelationshipRow.fetchOne(db, key: id) }
-    }
-
-    func allRelationships() async throws -> [RelationshipRow] {
-        try await writer.read { db in try RelationshipRow.order(Column("created_at")).fetchAll(db) }
     }
 
     func saveRelationship(_ record: RelationshipRow) async throws {
@@ -174,9 +221,9 @@ extension GRDBStore {
     }
 }
 
-// MARK: - BackendSyncStore (ADR-0012 §3: transactional push-ack application)
+// MARK: - BackendSyncStore + RelationshipRepository (ADR-0012 §3/§6)
 
-extension GRDBStore: BackendSyncStore {
+extension GRDBStore: BackendSyncStore, RelationshipRepository {
     public func applyPushResults(_ applications: [PushOutcomeApplication], at now: Date) async throws {
         try await writer.write { db in
             for application in applications {
@@ -231,6 +278,26 @@ extension GRDBStore: BackendSyncStore {
         try await remoteRecord(entityType: entityType, localID: localID).map {
             RemoteRecordState(entityType: $0.entityType, localID: $0.localId, remoteID: $0.remoteId,
                               serverVersion: $0.serverVersion, tombstoned: $0.tombstoned, lastSyncedAt: $0.lastSyncedAt)
+        }
+    }
+
+    // RelationshipRepository (ADR-0012 §6): relationship write + queued op in one transaction.
+    public func saveRelationshipAtomically(_ relationship: Relationship, enqueueing operations: [SyncOperation]) async throws {
+        try await writer.write { db in
+            try RelationshipRow(relationship: relationship).save(db)
+            for operation in operations {
+                try OutboxOperationRecord(operation: operation).insert(db)
+            }
+        }
+    }
+
+    public func relationship(id: Identifier<Relationship>) async throws -> Relationship? {
+        try await relationshipRow(id: id.rawValue.uuidString)?.toDomain()
+    }
+
+    public func allRelationships() async throws -> [Relationship] {
+        try await writer.read { db in
+            try RelationshipRow.order(Column("created_at")).fetchAll(db).map { try $0.toDomain() }
         }
     }
 

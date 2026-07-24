@@ -105,11 +105,12 @@ private func assignment(assignee: String = "dev-client-001") throws -> WorkoutAs
         #expect(try await store.remoteRecord(entityType: "workoutAssignment", localID: "local-1") == rr)
         #expect(try await store.remoteRecord(entityType: "workoutAssignment", remoteID: "remote-1")?.localId == "local-1")
 
-        let rel = RelationshipRow(id: "rel-1", remoteId: nil, coachAccountId: "dev-coach-001", clientAccountId: "dev-client-001",
+        let relID = UUID().uuidString
+        let rel = RelationshipRow(id: relID, remoteId: nil, coachAccountId: "dev-coach-001", clientAccountId: "dev-client-001",
                                   status: "active", createdAt: t0, acceptedAt: t0, endedAt: nil, serverVersion: 1, localSyncState: "synced")
         try await store.saveRelationship(rel)
-        #expect(try await store.relationship(id: "rel-1") == rel)
-        #expect(try await store.allRelationships().count == 1)
+        #expect(try await store.relationshipRow(id: relID) == rel)
+        #expect(try await store.allRelationships().count == 1)   // maps through the domain (UUID id)
 
         // Assignment delivery columns update without touching the snapshot/status.
         let a = try assignment()
@@ -168,7 +169,7 @@ private func assignment(assignee: String = "dev-client-001") throws -> WorkoutAs
 
         // Bystander untouched.
         let reopened = try GRDBStore.open(directory: bystander)
-        #expect(try await reopened.relationship(id: "rel-b") != nil)
+        #expect(try await reopened.relationshipRow(id: "rel-b") != nil)
         try reopened.close()
     }
 }

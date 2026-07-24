@@ -20,6 +20,8 @@ public struct SyncOperation: Sendable, Codable, Equatable, Identifiable {
         // Assignments (ADR-0009): aggregate = assignment id
         case assignmentCreated
         case assignmentStatusChanged
+        // Coach–Client relationship (ADR-0012 §6): aggregate = relationship id
+        case relationshipUpdated
     }
 
     public enum Status: String, Sendable, Codable {
@@ -83,6 +85,7 @@ public struct SyncOperation: Sendable, Codable, Equatable, Identifiable {
         case .auditEventAppended: return .auditEvent
         case .templateDraftSaved, .templatePublished: return .workoutTemplate
         case .assignmentCreated, .assignmentStatusChanged: return .workoutAssignment
+        case .relationshipUpdated: return .relationship
         }
     }
 
@@ -164,6 +167,9 @@ public typealias InMemorySyncStore = InMemoryStore<SyncOperation>
 
 /// Concrete composition boundary for coach programming persistence (ADR-0009).
 public typealias ProgrammingStore = any ProgrammingRepository<SyncOperation>
+
+/// Concrete composition boundary for Coach–Client relationship persistence (ADR-0012 §6).
+public typealias RelationshipStore = any RelationshipRepository<SyncOperation>
 
 /// Outcome classification for a transport attempt.
 public enum SyncAttemptOutcome: Sendable, Equatable {

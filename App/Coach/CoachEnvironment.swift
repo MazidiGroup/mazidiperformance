@@ -12,13 +12,15 @@ import MazidiSync
 /// database (same construction discipline as `ClientStore`; Swift 6.1-safe existentials).
 struct CoachStore {
     let programming: ProgrammingStore
+    let relationships: RelationshipStore
     let operations: SyncOutboxStore
     let audit: any AuditEventStore
 
     init<S>(_ store: S)
-        where S: ProgrammingRepository, S: SyncOperationStore, S: AuditEventStore,
+        where S: ProgrammingRepository, S: RelationshipRepository, S: SyncOperationStore, S: AuditEventStore,
               S.Operation == SyncOperation {
         self.programming = store
+        self.relationships = store
         self.operations = store
         self.audit = store
     }
@@ -40,6 +42,12 @@ final class CoachEnvironment {
     let media: any MediaResolving
     let store: CoachStore
     let storeHealth: ClientEnvironment.StoreHealth
+
+    /// Coach-side outbox transport (fixture connectivity toggle, symmetric to the client's
+    /// until a backend exists). Closes finding #3: the coach environment now drains its
+    /// outbox instead of only enqueueing.
+    let connectivity = FixtureSyncTransport()
+    private lazy var syncEngine = SyncEngine(store: store.operations, transport: connectivity)
 
     private let closeStore: () -> Void
     private(set) var isInvalidated = false
@@ -106,6 +114,16 @@ final class CoachEnvironment {
         guard !isInvalidated else { return }
         isInvalidated = true
         closeStore()
+    }
+
+    /// Drain the coach outbox (draft/publish/assignment/relationship operations). Reuses the
+    /// same SyncEngine the client uses; generation-guarded because the whole environment (and
+    /// its store) is torn down on sign-out/switch (`invalidate`), after which the store's
+    /// operation queries throw and the drain no-ops honestly. No backend exists, so the
+    /// fixture transport acknowledges when "online" and leaves ops queued when "offline".
+    func drainOutbox() async {
+        guard !isInvalidated else { return }
+        _ = try? await syncEngine.syncOnce()
     }
 
     func makeModel() -> CoachProgrammingModel {
