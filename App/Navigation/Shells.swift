@@ -1,46 +1,89 @@
 import SwiftUI
+import MazidiAuth
 
-/// Placeholder sign-in surface — authentication lands with its backend contract (R-01).
-/// Role selection here is a development affordance behind DEBUG, not a product flow.
-struct SignedOutView: View {
-    @Environment(AppModel.self) private var appModel
+/// Signed-out surface. Production sign-in arrives with the backend contract (R-01) —
+/// stated honestly, not simulated. In DEBUG builds only, deterministic development
+/// identities (ADR-0008 §6) provide real coordinator sign-ins for development, previews
+/// and UI tests; none of this exists in Release.
+struct SignInView: View {
+    @Environment(SessionModel.self) private var session
+    let pendingRemoteRevocation: Bool
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: MazidiMetric.stackSpacing) {
+            Spacer()
             Text("Mazidi Performance")
                 .font(.largeTitle.bold())
                 .foregroundStyle(MazidiColor.text)
             Text("Sign-in arrives with the backend contract.")
                 .foregroundStyle(MazidiColor.textSecondary)
+
+            if pendingRemoteRevocation {
+                StatusBadge(
+                    kind: .warning,
+                    label: "Signed out on this phone · other devices update when back online",
+                    systemImage: "wifi.slash"
+                )
+                .accessibilityIdentifier("pending_remote_revocation_badge")
+            }
+
             #if DEBUG
-            Button("Continue as Client (dev)") { appModel.activeRole = .client }
-                .buttonStyle(.borderedProminent)
+            VStack(spacing: MazidiMetric.tightSpacing) {
+                Text("Development accounts (DEBUG only)")
+                    .font(MazidiFont.caption)
+                    .foregroundStyle(MazidiColor.textTertiary)
+                Button("Continue as Client (dev)") {
+                    Task { await session.signIn(devIdentity: "dev-client-001") }
+                }
+                .buttonStyle(.mazidiPrimary)
                 .accessibilityIdentifier("dev_continue_client")
-            Button("Continue as Coach (dev)") { appModel.activeRole = .coach }
-                .buttonStyle(.bordered)
+                Button("Continue as Client 2 (dev)") {
+                    Task { await session.signIn(devIdentity: "dev-client-002") }
+                }
+                .buttonStyle(.mazidiSecondary)
+                .accessibilityIdentifier("dev_continue_client_2")
+                Button("Continue as Coach (dev)") {
+                    Task { await session.signIn(devIdentity: "dev-coach-001") }
+                }
+                .buttonStyle(.mazidiSecondary)
                 .accessibilityIdentifier("dev_continue_coach")
+            }
+            .padding(.horizontal, MazidiMetric.screenPadding)
             #endif
+            Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(MazidiColor.background)
     }
 }
 
-/// Client shell — slice 1 Today → Workout journey (panels 3a–3e, 4a/4b, 5a/5b, 7b/7d/7g).
-/// The real navigation graph and dependency wiring live in `ClientRootView`.
-struct ClientShellView: View {
-    var body: some View {
-        ClientRootView()
-    }
-}
-
-/// Coach shell — phases 3–4. Kept separate from the client graph by construction.
+/// Coach shell — reached ONLY through a validated coach role claim. Coach features land
+/// in later phases; the shell provides the account surface and sign-out.
 struct CoachShellView: View {
+    @Environment(SessionModel.self) private var session
+    let accountLabel: String
+
     var body: some View {
         NavigationStack {
-            Text("Coach dashboard — phase 4")
-                .foregroundStyle(MazidiColor.textSecondary)
-                .navigationTitle("Today")
+            VStack(spacing: MazidiMetric.stackSpacing) {
+                Text("Coach dashboard — phase 4")
+                    .foregroundStyle(MazidiColor.textSecondary)
+                #if DEBUG
+                // Dev-only identity label (fixture ids). Real coach profile surfaces
+                // arrive with turn 13b; raw subject ids are never rendered in Release.
+                Text("Signed in: \(accountLabel)")
+                    .font(MazidiFont.caption)
+                    .foregroundStyle(MazidiColor.textTertiary)
+                    .accessibilityIdentifier("coach_account_label")
+                #endif
+            }
+            .navigationTitle("Today")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Sign out") { Task { await session.signOut() } }
+                        .accessibilityIdentifier("coach_sign_out")
+                }
+            }
         }
     }
 }

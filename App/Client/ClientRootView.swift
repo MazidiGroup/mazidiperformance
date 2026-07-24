@@ -2,12 +2,12 @@ import SwiftUI
 import MazidiDomain
 import MazidiFoundations
 
-/// Composition + navigation root for the Client workout slice. Owns the `ClientEnvironment`
-/// (DI/fixtures) and one long-lived `ClientWorkoutModel`, and drives a value-based
-/// `NavigationStack`. The model is created once here and threaded to every screen, so no
-/// view constructs its own dependencies.
+/// Navigation root for the Client workout slice. The account-scoped `ClientEnvironment`
+/// is INJECTED by the session layer (ADR-0008) — this view never constructs storage —
+/// and one long-lived `ClientWorkoutModel` is threaded to every screen.
 struct ClientRootView: View {
-    @State private var environment = ClientEnvironment()
+    let environment: ClientEnvironment
+    @Environment(SessionModel.self) private var session
     @State private var model: ClientWorkoutModel?
     @State private var path: [ClientRoute] = []
 
@@ -24,6 +24,12 @@ struct ClientRootView: View {
                         onResume: { Task { if await model.resumeWorkout() { path.append(.active) } } },
                         onViewSummary: { path.append(.complete) }
                     )
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button("Sign out") { Task { await session.signOut() } }
+                                .accessibilityIdentifier("client_sign_out")
+                        }
+                    }
                 } else {
                     ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
