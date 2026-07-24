@@ -42,18 +42,41 @@ final class SessionModel {
 
     init() {
         let provider: any AuthProviding
+        let credentialStore: any CredentialStore
         #if DEBUG
         provider = DevelopmentAuthProvider()
+        credentialStore = Self.developmentCredentialStore() ?? KeychainCredentialStore()
         #else
         provider = UnavailableAuthProvider()
+        credentialStore = KeychainCredentialStore()
         #endif
-        let credentialStore = KeychainCredentialStore()
         self.credentialStore = credentialStore
         self.coordinator = SessionCoordinator(
             provider: provider,
             credentials: credentialStore
         )
     }
+
+    #if DEBUG
+    /// UI-test credential storage (never Release). CI builds the app unsigned, so the
+    /// Keychain is unavailable; under explicit UI-test configuration we substitute a
+    /// Keychain-free store keyed to the SAME launch variables that scope the database:
+    /// - `MAZIDI_STORE_DIR=<base>` — file-backed store in that unique per-test directory,
+    ///   so a development session survives termination (relaunch/account-switch journeys).
+    /// - `MAZIDI_STORE_MODE=ephemeral` — in-memory store (fresh per process; sign-in works
+    ///   without the Keychain, no cross-launch restoration needed).
+    /// Returns nil for normal Debug runs, which then use the real Keychain.
+    private static func developmentCredentialStore() -> (any CredentialStore)? {
+        let env = ProcessInfo.processInfo.environment
+        if let dir = env["MAZIDI_STORE_DIR"] {
+            return DevelopmentFileCredentialStore(directory: URL(fileURLWithPath: dir, isDirectory: true))
+        }
+        if env["MAZIDI_STORE_MODE"] == "ephemeral" {
+            return InMemoryCredentialStore()
+        }
+        return nil
+    }
+    #endif
 
     func start() async {
         guard observation == nil else { return }

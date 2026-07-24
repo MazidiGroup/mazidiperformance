@@ -71,6 +71,17 @@ swiftlint              # config in .swiftlint.yml (pending)
 - Tokens live in the Keychain only (`com.mazidigroup.mazidi.auth`,
   after-first-unlock-this-device-only). Never commit, log, or store credentials anywhere
   else; `AuthCredentials`' description redacts tokens by construction.
+- **Credential store under UI test (DEBUG only):** CI builds the app unsigned
+  (`CODE_SIGNING_ALLOWED=NO`), and an unsigned app on the simulator cannot use the
+  Keychain (`SecItemAdd` → missing entitlement). So when a UI-test launch variable is
+  present, `SessionModel` substitutes a Keychain-free store: `DevelopmentFileCredentialStore`
+  under `MAZIDI_STORE_DIR` (fixture `dev.*` tokens in the test's own temp directory, so a
+  development session survives relaunch) or `InMemoryCredentialStore` under
+  `MAZIDI_STORE_MODE=ephemeral`. Normal Debug runs and **all** Release runs use the real
+  Keychain — the substitution is `#if DEBUG` and only ever engaged by explicit test
+  configuration. To reproduce CI locally, add `CODE_SIGNING_ALLOWED=NO
+  CODE_SIGNING_REQUIRED=NO` to `xcodebuild … test` — a **signed** local run hides this
+  class of failure because the app then has a keychain-access group.
 
 ## CI toolchain gap — build against Swift 6.1 (Xcode 16.4), not just local
 

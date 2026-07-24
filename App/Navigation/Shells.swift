@@ -17,6 +17,9 @@ struct SignInView: View {
                 .foregroundStyle(MazidiColor.text)
             Text("Sign-in arrives with the backend contract.")
                 .foregroundStyle(MazidiColor.textSecondary)
+                // Stable app-state marker so UI tests can wait for the signed-out surface
+                // deterministically rather than inferring it from a control's presence.
+                .accessibilityIdentifier("state_signed_out")
 
             if pendingRemoteRevocation {
                 StatusBadge(
