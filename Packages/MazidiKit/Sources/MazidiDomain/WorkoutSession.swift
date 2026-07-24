@@ -80,11 +80,15 @@ public struct WorkoutSession: Sendable, Codable, Equatable {
     /// A rest in progress when the session was last saved. Timestamp-based (RestTimer),
     /// so remaining time after relaunch is computed honestly, never restarted.
     public private(set) var activeRest: RestTimer?
+    /// The assignment this session executes, when started from one (ADR-0009 completion
+    /// linkage). Nil for fixture/ad-hoc workouts.
+    public let assignmentID: Identifier<WorkoutAssignment>?
 
     public init(
         id: Identifier<WorkoutSession> = .init(),
         workout: AssignedWorkout,
-        epoch: Int
+        epoch: Int,
+        assignmentID: Identifier<WorkoutAssignment>? = nil
     ) {
         self.id = id
         self.workout = workout
@@ -94,6 +98,7 @@ public struct WorkoutSession: Sendable, Codable, Equatable {
         self.swaps = [:]
         self.currentExerciseID = nil
         self.activeRest = nil
+        self.assignmentID = assignmentID
     }
 
     /// Persistence-restoration initializer (ADR-0007): reconstructs a session in an
@@ -109,7 +114,8 @@ public struct WorkoutSession: Sendable, Codable, Equatable {
         setEntries: [SetEntry],
         swaps: [Identifier<AssignedExercise>: ExerciseSlug],
         currentExerciseID: Identifier<AssignedExercise>? = nil,
-        activeRest: RestTimer? = nil
+        activeRest: RestTimer? = nil,
+        assignmentID: Identifier<WorkoutAssignment>? = nil
     ) {
         self.id = id
         self.workout = workout
@@ -121,6 +127,7 @@ public struct WorkoutSession: Sendable, Codable, Equatable {
         self.swaps = swaps
         self.currentExerciseID = currentExerciseID
         self.activeRest = activeRest
+        self.assignmentID = assignmentID
     }
 
     // MARK: - Lifecycle
