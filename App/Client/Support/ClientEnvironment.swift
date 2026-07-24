@@ -1,4 +1,5 @@
 import Foundation
+import MazidiAuth
 import MazidiDomain
 import MazidiFoundations
 import MazidiPersistence
@@ -89,20 +90,29 @@ final class ClientEnvironment {
 
     var connectivity: FixtureSyncTransport { transport }
 
+    /// The authenticated account this environment serves.
+    let accountID: AccountID
+    private let closeStore: () -> Void
+    private(set) var isInvalidated = false
+
     init(
+        accountID: AccountID,
         clock: any AppClock = SystemClock(),
         content: any ExerciseContentProviding = FixtureExerciseContentProvider(),
         media: any MediaResolving = BundleMediaResolver(),
         assignedWorkout: AssignedWorkout = ClientFixtures.todaysWorkout,
         store: ClientStore? = nil
     ) {
+        self.accountID = accountID
         self.clock = clock
         self.content = content
         self.media = media
         self.assignedWorkout = assignedWorkout
 
-        let (resolvedStore, health) = store.map { ($0, StoreHealth.durable) } ?? Self.makeStore()
+        let (resolvedStore, health, close) = store.map { ($0, StoreHealth.durable, {}) }
+            ?? Self.makeStore(accountID: accountID)
         self.storeHealth = health
+        self.closeStore = close
         let transport = FixtureSyncTransport()
         self.store = resolvedStore
         self.transport = transport
@@ -113,45 +123,78 @@ final class ClientEnvironment {
                 audit: resolvedStore.audit
             ),
             clock: clock,
-            actorID: ClientFixtures.devClientActorID
+            // Deterministic per-account actor identity (never the raw account ID).
+            actorID: accountID.stableActorUUID
         )
         self.syncEngine = SyncEngine(store: resolvedStore.operations, transport: transport)
     }
 
-    /// Store selection. Durable GRDB in Application Support is the normal path; the
-    /// DEBUG-only overrides exist for UI tests and previews:
+    /// Sign-out/switch teardown (ADR-0008 §8): best-effort local audit record, then close
+    /// the database so every later repository call throws — account data becomes
+    /// unreachable through this environment. Idempotent.
+    func invalidate() {
+        guard !isInvalidated else { return }
+        isInvalidated = true
+        let store = store
+        let actorID = accountID.stableActorUUID
+        let close = closeStore
+        let clock = clock
+        Task {
+            // Non-sensitive security event in the account's own audit chain.
+            if let previous = try? await store.audit.latestHash() {
+                try? await store.audit.append(AuditEvent(
+                    kind: .signedOut,
+                    actorID: actorID,
+                    subjectDescription: "session:this-device",
+                    occurredAt: clock.now(),
+                    previousHash: previous
+                ))
+            }
+            close()
+        }
+    }
+
+    /// Store selection (ADR-0008 §4): durable GRDB in the ACCOUNT-SCOPED directory
+    /// `Application Support/MazidiPerformance/accounts/<hash>/` is the normal path.
+    /// The legacy pre-identity database directly under `MazidiPerformance/` is never
+    /// opened for an account (SECURITY_BOUNDARIES.md legacy policy). DEBUG-only
+    /// overrides for UI tests and previews:
     /// - `MAZIDI_STORE_MODE=ephemeral` — fresh in-memory database for this process.
-    /// - `MAZIDI_STORE_DIR=<path>` — durable database at an explicit directory (the
-    ///   relaunch-restoration UI test uses a unique temp directory).
+    /// - `MAZIDI_STORE_DIR=<base>` — account-scoped store under an explicit BASE
+    ///   directory (isolation for relaunch/account-switch UI tests).
     /// Neither override is compiled into Release builds.
-    private static func makeStore() -> (ClientStore, StoreHealth) {
+    private static func makeStore(accountID: AccountID) -> (ClientStore, StoreHealth, () -> Void) {
         let log = AppLog(category: "persistence")
         #if DEBUG
         let env = ProcessInfo.processInfo.environment
         if env["MAZIDI_STORE_MODE"] == "ephemeral", let ephemeral = try? GRDBStore.inMemory() {
-            return (ClientStore(ephemeral), .intentionallyEphemeral)
+            return (ClientStore(ephemeral), .intentionallyEphemeral, { try? ephemeral.close() })
         }
-        if let dir = env["MAZIDI_STORE_DIR"],
-           let relocated = try? GRDBStore.open(directory: URL(fileURLWithPath: dir, isDirectory: true)) {
-            return (ClientStore(relocated), Self.health(of: relocated))
+        if let dir = env["MAZIDI_STORE_DIR"] {
+            let base = URL(fileURLWithPath: dir, isDirectory: true)
+            if let relocated = try? GRDBStore.open(
+                directory: AccountDatabasePath.directory(base: base, accountID: accountID)
+            ) {
+                return (ClientStore(relocated), Self.health(of: relocated), { try? relocated.close() })
+            }
         }
         #endif
         do {
             let base = try FileManager.default.url(
                 for: .applicationSupportDirectory, in: .userDomainMask,
                 appropriateFor: nil, create: true
-            )
+            ).appendingPathComponent("MazidiPerformance", isDirectory: true)
             let store = try GRDBStore.open(
-                directory: base.appendingPathComponent("MazidiPerformance", isDirectory: true)
+                directory: AccountDatabasePath.directory(base: base, accountID: accountID)
             )
-            return (ClientStore(store), Self.health(of: store))
+            return (ClientStore(store), Self.health(of: store), { try? store.close() })
         } catch {
             // Unrecoverable open failure (the corrupt-file policy already ran and the
-            // damaged files are preserved on disk — MIGRATIONS.md). Keep this launch
-            // usable with an in-memory store, and surface the condition — never a
-            // silent empty state.
-            log.error("Durable store unavailable (\(error)); running in-memory for this launch")
-            return (ClientStore(InMemorySyncStore()), .ephemeralFallback)
+            // damaged files are preserved on disk — MIGRATIONS.md). The session layer
+            // routes this to the storage-failure surface — never normal signed-in
+            // data access (ADR-0008).
+            log.error("Durable account store unavailable (\(error)); in-memory fallback")
+            return (ClientStore(InMemorySyncStore()), .ephemeralFallback, {})
         }
     }
 

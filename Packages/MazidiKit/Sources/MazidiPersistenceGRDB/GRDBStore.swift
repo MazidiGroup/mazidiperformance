@@ -59,6 +59,16 @@ public final class GRDBStore: @unchecked Sendable {
         self.recovery = recovery
     }
 
+    // MARK: - Closing (account transitions, ADR-0008)
+
+    /// Close the underlying database connections. Called BEFORE any account transition
+    /// (sign-out/switch): after close, every repository call throws, so a stale task
+    /// holding this store can no longer read or write the account's data. Closing is
+    /// terminal for this instance — reopen by constructing a new store.
+    public func close() throws {
+        try writer.close()
+    }
+
     // MARK: - Opening (factory + corruption policy, MIGRATIONS.md)
 
     public enum OpenError: Error {

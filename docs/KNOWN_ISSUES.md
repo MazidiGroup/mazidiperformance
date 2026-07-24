@@ -42,6 +42,29 @@ additional UI/integration coverage for slice 1.
 
 ## Medium
 
+### M7 — Local-lock state has no enforcement policy or biometrics
+- **Where:** `AuthPhase.locked`, `SessionRootView` lock surface (ADR-0008).
+- **Impact:** The locked state exists in the machine and UI (with unlock wiring), but
+  nothing triggers it automatically and no biometric/passcode check gates unlock — it is
+  scaffolding, honestly labelled, not a security control yet.
+- **Why not fixed now:** Biometric policy (13c) needs product decisions (when to lock,
+  fallbacks, grace) and LocalAuthentication wiring — its own slice.
+- **Owning milestone:** security/settings slice (turn 13c).
+- **Acceptance:** lock triggers per policy, unlock requires biometric/passcode, states
+  and copy match 13c, tested.
+
+### M8 — Sign-out audit event is best-effort and unordered with close
+- **Where:** `ClientEnvironment.invalidate()`.
+- **Impact:** The local `signedOut` audit event is appended in a detached task just
+  before the store closes; on a race it may be dropped (sign-out still completes). No
+  data loss, but the audit trail can miss the entry.
+- **Why not fixed now:** Making it strictly ordered means teaching the session layer to
+  await account-store writes during teardown; deferred with the backend audit-sync work
+  (ADR-0006 R-02).
+- **Owning milestone:** backend sync slice.
+- **Acceptance:** sign-out awaits the audit append (with timeout) before close; test
+  proves presence after relaunch.
+
 ### M4 — Session epoch hardcoded to `1`
 - **Where:** `App/Client/Model/ClientWorkoutModel.swift:126` (`service.start(workout:, epoch: 1)`).
 - **Impact:** The one-device epoch is a constant instead of a server-claimed value, so the

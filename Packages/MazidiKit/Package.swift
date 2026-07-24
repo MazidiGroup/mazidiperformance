@@ -15,6 +15,7 @@ let package = Package(
         .library(name: "MazidiDomain", targets: ["MazidiDomain"]),
         .library(name: "MazidiPersistence", targets: ["MazidiPersistence"]),
         .library(name: "MazidiPersistenceGRDB", targets: ["MazidiPersistenceGRDB"]),
+        .library(name: "MazidiAuth", targets: ["MazidiAuth"]),
         .library(name: "MazidiSync", targets: ["MazidiSync"]),
         .library(name: "MazidiServices", targets: ["MazidiServices"]),
         .library(name: "MazidiNetworking", targets: ["MazidiNetworking"]),
@@ -30,6 +31,9 @@ let package = Package(
         .target(name: "MazidiFoundations"),
         .target(name: "MazidiDomain", dependencies: ["MazidiFoundations"]),
         .target(name: "MazidiPersistence", dependencies: ["MazidiDomain", "MazidiFoundations"]),
+        // Auth/session foundation (ADR-0008). Imports CryptoKit (SHA-256 path
+        // derivation only) — an accepted Apple-framework exception like ADR-0007's.
+        .target(name: "MazidiAuth", dependencies: ["MazidiFoundations"]),
         .target(name: "MazidiSync", dependencies: ["MazidiDomain", "MazidiPersistence", "MazidiFoundations"]),
         // Leaf adapter (ADR-0007): the only target that may import GRDB. Depends on
         // MazidiSync to map the concrete SyncOperation — no cycle, contracts unchanged.
@@ -45,7 +49,8 @@ let package = Package(
         .testTarget(name: "MazidiSyncTests", dependencies: ["MazidiSync", "MazidiPersistence"]),
         .testTarget(name: "MazidiServicesTests", dependencies: ["MazidiServices"]),
         .testTarget(name: "MazidiPersistenceGRDBTests", dependencies: [
-            "MazidiPersistenceGRDB", "MazidiServices",
+            "MazidiPersistenceGRDB", "MazidiServices", "MazidiAuth",
         ]),
+        .testTarget(name: "MazidiAuthTests", dependencies: ["MazidiAuth"]),
     ]
 )
