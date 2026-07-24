@@ -1,5 +1,6 @@
 import SwiftUI
 import MazidiDomain
+import MazidiFoundations
 
 /// Exercise detail (panel 7b): poster-first media, type-aware prescription, coach cue, and
 /// client-layer copy (description, instructions, common mistakes, benefits). Draft copy is
@@ -9,14 +10,17 @@ struct ExerciseDetailView: View {
     @Bindable var model: ClientWorkoutModel
     let exercise: AssignedExercise
 
-    private var content: ExerciseContent? { model.content(for: exercise.slug) }
-    private var name: String { content?.displayName ?? exercise.slug.rawValue }
+    /// Copy and media both follow the performed slug so an active swap never shows the
+    /// alternative's clip under the assigned exercise's name and instructions.
+    private var performed: ExerciseSlug { model.performedSlug(for: exercise) }
+    private var content: ExerciseContent? { model.content(for: performed) }
+    private var name: String { content?.displayName ?? performed.rawValue }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: MazidiMetric.stackSpacing) {
                 ExerciseMediaView(
-                    slug: model.performedSlug(for: exercise),
+                    slug: performed,
                     displayName: name,
                     media: model.media
                 )
@@ -32,7 +36,7 @@ struct ExerciseDetailView: View {
 
                 prescriptionCard
 
-                if let cue = exercise.coachCue {
+                if performed == exercise.slug, let cue = exercise.coachCue {
                     calloutCard(icon: "quote.opening", title: "Coach cue", text: cue, kind: .info)
                 }
 

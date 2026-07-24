@@ -69,8 +69,12 @@ struct ActiveWorkoutView: View {
     }
 
     @ViewBuilder private func content(for exercise: AssignedExercise) -> some View {
-        let content = model.content(for: exercise.slug)
-        let name = content?.displayName ?? exercise.slug.rawValue
+        // Copy, name and badge must describe the exercise actually being performed —
+        // after an approved swap that is the alternative, not the assigned slug (4b/7h).
+        let performed = model.performedSlug(for: exercise)
+        let isSwapped = performed != exercise.slug
+        let content = model.content(for: performed)
+        let name = content?.displayName ?? performed.rawValue
         let recorded = model.setsRecorded(for: exercise)
         let total = exercise.prescription.setCount
         let finished = recorded >= total
@@ -83,7 +87,7 @@ struct ActiveWorkoutView: View {
                     .accessibilityAddTraits(.isHeader)
 
                 ExerciseMediaView(
-                    slug: model.performedSlug(for: exercise),
+                    slug: performed,
                     displayName: name,
                     media: model.media,
                     isOpen: true
@@ -109,13 +113,16 @@ struct ActiveWorkoutView: View {
                 if content?.contentStatus == .draftRequiresHumanReview {
                     DraftBadge()
                 }
-                if model.performedSlug(for: exercise) != exercise.slug {
-                    StatusBadge(kind: .info, label: "Swapped from \(exercise.slug.rawValue)", systemImage: "arrow.triangle.2.circlepath")
+                if isSwapped {
+                    let assignedName = model.content(for: exercise.slug)?.displayName ?? exercise.slug.rawValue
+                    StatusBadge(kind: .info, label: "Swapped from \(assignedName)", systemImage: "arrow.triangle.2.circlepath")
                 }
 
-                progress(recorded: recorded, total: total)
+                progress(for: exercise, recorded: recorded, total: total)
 
-                if let cue = exercise.coachCue {
+                // The coach cue was written for the assigned exercise — don't show it
+                // under a swapped alternative it may not apply to.
+                if !isSwapped, let cue = exercise.coachCue {
                     Text(cue)
                         .font(MazidiFont.callout)
                         .foregroundStyle(MazidiColor.textSecondary)
@@ -144,10 +151,10 @@ struct ActiveWorkoutView: View {
         .scrollDismissesKeyboard(.interactively)
     }
 
-    private func progress(recorded: Int, total: Int) -> some View {
+    private func progress(for exercise: AssignedExercise, recorded: Int, total: Int) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text(PrescriptionFormat.summary(exercise!.prescription))
+                Text(PrescriptionFormat.summary(exercise.prescription))
                     .font(MazidiFont.bodyEmphasis)
                     .foregroundStyle(MazidiColor.text)
                 Spacer()
