@@ -49,7 +49,7 @@ let package = Package(
         .testTarget(name: "MazidiSyncTests", dependencies: ["MazidiSync", "MazidiPersistence"]),
         .testTarget(name: "MazidiServicesTests", dependencies: ["MazidiServices"]),
         .testTarget(name: "MazidiPersistenceGRDBTests", dependencies: [
-            "MazidiPersistenceGRDB", "MazidiServices",
+            "MazidiPersistenceGRDB", "MazidiServices", "MazidiAuth",
         ]),
         .testTarget(name: "MazidiAuthTests", dependencies: ["MazidiAuth"]),
     ]
