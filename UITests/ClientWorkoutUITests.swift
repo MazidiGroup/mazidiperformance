@@ -9,11 +9,15 @@ final class ClientWorkoutUITests: XCTestCase {
         continueAfterFailure = false
     }
 
-    /// Launch with the DEBUG ephemeral store (fresh in-memory database per process) so
-    /// journeys never see state from a previous test or run. The relaunch-restoration
-    /// test opts into a durable store via `MAZIDI_STORE_DIR` instead.
+    /// Launch with the DEBUG ephemeral store (fresh in-memory database per process) and
+    /// `MAZIDI_AUTH_RESET` (forget any stored dev session, since the simulator Keychain
+    /// outlives app launches) so journeys always start signed out and never see state
+    /// from a previous test or run. The relaunch-restoration test opts into a durable
+    /// store and session restoration explicitly.
     @MainActor
-    private func launchAsClient(environment: [String: String] = ["MAZIDI_STORE_MODE": "ephemeral"]) -> XCUIApplication {
+    private func launchAsClient(
+        environment: [String: String] = ["MAZIDI_STORE_MODE": "ephemeral", "MAZIDI_AUTH_RESET": "1"]
+    ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchEnvironment.merge(environment) { _, new in new }
         app.launch()
@@ -100,9 +104,11 @@ final class ClientWorkoutUITests: XCTestCase {
         let app = XCUIApplication()
         app.launch()
         XCTAssertFalse(app.buttons["dev_continue_client"].waitForExistence(timeout: 5),
-                       "Release builds must not expose dev role selection")
+                       "Release builds must not expose dev sign-in")
+        XCTAssertFalse(app.buttons["dev_continue_client_2"].exists,
+                       "Release builds must not expose dev sign-in")
         XCTAssertFalse(app.buttons["dev_continue_coach"].exists,
-                       "Release builds must not expose dev role selection")
+                       "Release builds must not expose dev sign-in")
         XCTAssertFalse(app.switches["dev_connectivity_toggle"].exists,
                        "Release builds must not expose the fixture connectivity toggle")
         #endif
@@ -125,14 +131,16 @@ final class ClientWorkoutUITests: XCTestCase {
         if app.buttons["complete_done_button"].exists { app.buttons["complete_done_button"].tapWhenReady() }
     }
 
-    /// Relaunch restoration (5b, GRDB milestone): a terminated app relaunches with the
-    /// unfinished workout offered for resume; after completion, a further relaunch must
-    /// NOT offer it again. Uses a unique durable store directory so the journey is
-    /// isolated from other tests and from the developer's real database.
+    /// Relaunch restoration (5b, GRDB milestone + ADR-0008): a terminated app relaunches,
+    /// restores the stored development session from the Keychain (no fresh sign-in), and
+    /// offers the unfinished workout for resume; after completion, a further relaunch
+    /// must NOT offer it again. Uses a unique durable store BASE directory (the
+    /// account-scoped path is derived beneath it) for isolation.
     @MainActor
     func testRelaunchRestoresUnfinishedWorkoutAndCompletionIsFinal() {
         let storeDir = NSTemporaryDirectory() + "mazidi-uitest-\(UUID().uuidString)"
-        let durable = ["MAZIDI_STORE_DIR": storeDir]
+        // First launch resets auth (fresh sign-in); relaunches deliberately do NOT.
+        let durable = ["MAZIDI_STORE_DIR": storeDir, "MAZIDI_AUTH_RESET": "1"]
 
         // Launch 1: start the workout and record one set, then terminate mid-session.
         let app = launchAsClient(environment: durable)
@@ -145,11 +153,13 @@ final class ClientWorkoutUITests: XCTestCase {
                       "The set should be recorded before termination")
         app.terminate()
 
-        // Launch 2: the unfinished session is offered for resume — nothing lost.
+        // Launch 2: the stored session restores (no sign-in screen) and the unfinished
+        // workout is offered for resume — nothing lost.
         let relaunched = XCUIApplication()
         relaunched.launchEnvironment["MAZIDI_STORE_DIR"] = storeDir
         relaunched.launch()
-        selectClientRole(in: relaunched, expecting: "today_resume_workout")
+        XCTAssertTrue(relaunched.buttons["today_resume_workout"].waitForExistence(timeout: 20),
+                      "Restored session should land on Today with the resume offer")
         relaunched.buttons["today_resume_workout"].tapWhenReady()
         XCTAssertTrue(relaunched.staticTexts["active_exercise_title"].waitForExistence(timeout: 15),
                       "Resume should land in the active workout")
@@ -165,7 +175,8 @@ final class ClientWorkoutUITests: XCTestCase {
         let final = XCUIApplication()
         final.launchEnvironment["MAZIDI_STORE_DIR"] = storeDir
         final.launch()
-        selectClientRole(in: final, expecting: "today_start_workout")
+        XCTAssertTrue(final.buttons["today_start_workout"].waitForExistence(timeout: 20),
+                      "Restored session should land on Today offering a fresh start")
         XCTAssertFalse(final.buttons["today_resume_workout"].exists,
                        "A completed session must never be offered as resumable")
     }
