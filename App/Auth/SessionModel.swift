@@ -33,6 +33,7 @@ final class SessionModel {
     private(set) var isOfflineAuthenticated = false
 
     private(set) var clientEnvironment: ClientEnvironment?
+    private(set) var coachEnvironment: CoachEnvironment?
 
     private let coordinator: SessionCoordinator
     private var observation: Task<Void, Never>?
@@ -116,13 +117,20 @@ final class SessionModel {
     private func handle(_ phase: AuthPhase) async {
         let generation = await coordinator.generation
 
-        // Tear down the account environment whenever data access ends or the
+        // Tear down account environments whenever data access ends or the
         // generation moved on (sign-out, switch): audit, close, drop (ADR-0008 §8).
-        if let env = clientEnvironment,
-           !phase.allowsAccountDataAccess || environmentGeneration != generation {
-            env.invalidate()
-            clientEnvironment = nil
-            environmentGeneration = nil
+        if !phase.allowsAccountDataAccess || environmentGeneration != generation {
+            if let env = clientEnvironment {
+                env.invalidate()
+                clientEnvironment = nil
+            }
+            if let env = coachEnvironment {
+                env.invalidate()
+                coachEnvironment = nil
+            }
+            if clientEnvironment == nil, coachEnvironment == nil {
+                environmentGeneration = nil
+            }
         }
 
         switch phase {
@@ -174,9 +182,15 @@ final class SessionModel {
                 route = .clientShell
             }
         case .coach:
-            // Coach data surfaces arrive in later phases; the shell itself carries no
-            // account-scoped store yet. Label shows the fixture identity in DEBUG.
-            route = .coachShell(accountLabel: session.claims.accountID.rawValue)
+            if coachEnvironment == nil || environmentGeneration != generation {
+                coachEnvironment = CoachEnvironment(accountID: session.claims.accountID)
+                environmentGeneration = generation
+            }
+            if coachEnvironment?.storeHealth == .ephemeralFallback {
+                route = .storageFailure
+            } else {
+                route = .coachShell(accountLabel: session.claims.accountID.rawValue)
+            }
         }
     }
 

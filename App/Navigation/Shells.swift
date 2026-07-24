@@ -60,17 +60,17 @@ struct SignInView: View {
     }
 }
 
-/// Coach shell — reached ONLY through a validated coach role claim. Coach features land
-/// in later phases; the shell provides the account surface and sign-out.
+/// Coach shell — reached ONLY through a validated coach role claim. Hosts the
+/// programming flow (ADR-0009) over the session-owned coach environment.
 struct CoachShellView: View {
     @Environment(SessionModel.self) private var session
     let accountLabel: String
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: MazidiMetric.stackSpacing) {
-                Text("Coach dashboard — phase 4")
-                    .foregroundStyle(MazidiColor.textSecondary)
+        if let environment = session.coachEnvironment {
+            VStack(spacing: 0) {
+                CoachRootView(environment: environment)
+                    .id(ObjectIdentifier(environment)) // fresh navigation per account
                 #if DEBUG
                 // Dev-only identity label (fixture ids). Real coach profile surfaces
                 // arrive with turn 13b; raw subject ids are never rendered in Release.
@@ -78,15 +78,12 @@ struct CoachShellView: View {
                     .font(MazidiFont.caption)
                     .foregroundStyle(MazidiColor.textTertiary)
                     .accessibilityIdentifier("coach_account_label")
+                    .padding(.bottom, 4)
                 #endif
             }
-            .navigationTitle("Today")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Sign out") { Task { await session.signOut() } }
-                        .accessibilityIdentifier("coach_sign_out")
-                }
-            }
+            .background(MazidiColor.background)
+        } else {
+            ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 }
