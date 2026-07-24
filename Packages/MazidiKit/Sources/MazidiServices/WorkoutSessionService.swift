@@ -45,9 +45,16 @@ public actor WorkoutSessionService {
     // MARK: - Lifecycle
 
     /// Load the resumable session after launch/crash (5b: unfinished workout on Today).
+    /// Normalises restoration state honestly: a rest whose time fully elapsed while the
+    /// app was closed is restored as elapsed (cleared), never restarted (panel 4a).
     public func restoreIfNeeded() async throws -> WorkoutSession? {
         if session == nil {
             session = try await store.sessions.resumableSession()
+            if var s = session, let rest = s.activeRest, rest.isFinished(at: clock.now()) {
+                s.setActiveRest(nil)
+                try await store.sessions.save(s)
+                session = s
+            }
         }
         return session
     }
@@ -83,16 +90,43 @@ public actor WorkoutSessionService {
         session = s
     }
 
+    /// Idempotent: pausing an already-paused session is a no-op, not an error — a client
+    /// re-tapping Pause (or a restored paused session) must never see a failure
+    /// (KNOWN_ISSUES M3). Other phases still fail loudly via the domain rules.
     public func pause() async throws {
         guard var s = session else { throw ServiceError.noActiveSession }
+        if s.phase == .paused { return }
         try s.pause()
         try await store.sessions.save(s)
         session = s
     }
 
+    /// Idempotent: resuming an already-active session is a no-op, not an error — once
+    /// sessions survive relaunch a restored session can legitimately still be `.active`
+    /// (the app was killed without exiting), and resume must succeed silently
+    /// (KNOWN_ISSUES M1). Other phases still fail loudly via the domain rules.
     public func resume() async throws {
         guard var s = session else { throw ServiceError.noActiveSession }
+        if s.phase == .active { return }
         try s.resume()
+        try await store.sessions.save(s)
+        session = s
+    }
+
+    /// Persist the client's position for honest restoration (5b). Restoration metadata —
+    /// saved with the snapshot, never enqueued as a sync operation.
+    public func updateCurrentExercise(_ exerciseID: Identifier<AssignedExercise>?) async throws {
+        guard var s = session else { throw ServiceError.noActiveSession }
+        s.setCurrentExercise(exerciseID)
+        try await store.sessions.save(s)
+        session = s
+    }
+
+    /// Persist (or clear) the in-progress rest so a relaunch can compute the honest
+    /// remaining time from timestamps (panel 4a). Same snapshot-only rule as position.
+    public func updateActiveRest(_ rest: RestTimer?) async throws {
+        guard var s = session else { throw ServiceError.noActiveSession }
+        s.setActiveRest(rest)
         try await store.sessions.save(s)
         session = s
     }

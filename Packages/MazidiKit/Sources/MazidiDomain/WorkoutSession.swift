@@ -74,6 +74,12 @@ public struct WorkoutSession: Sendable, Codable, Equatable {
     public private(set) var setEntries: [SetEntry]
     /// Approved swaps applied this session: assigned exercise → performed slug.
     public private(set) var swaps: [Identifier<AssignedExercise>: ExerciseSlug]
+    /// Restoration position (5b): the exercise the client was on. Optional metadata, not
+    /// part of the recorded-work truth.
+    public private(set) var currentExerciseID: Identifier<AssignedExercise>?
+    /// A rest in progress when the session was last saved. Timestamp-based (RestTimer),
+    /// so remaining time after relaunch is computed honestly, never restarted.
+    public private(set) var activeRest: RestTimer?
 
     public init(
         id: Identifier<WorkoutSession> = .init(),
@@ -86,6 +92,35 @@ public struct WorkoutSession: Sendable, Codable, Equatable {
         self.phase = .notStarted
         self.setEntries = []
         self.swaps = [:]
+        self.currentExerciseID = nil
+        self.activeRest = nil
+    }
+
+    /// Persistence-restoration initializer (ADR-0007): reconstructs a session in an
+    /// arbitrary recorded state from durable storage. Not for use by feature code — the
+    /// mutating API above remains the only way to *change* a session.
+    public init(
+        restoring id: Identifier<WorkoutSession>,
+        workout: AssignedWorkout,
+        epoch: Int,
+        phase: Phase,
+        startedAt: Date?,
+        completedAt: Date?,
+        setEntries: [SetEntry],
+        swaps: [Identifier<AssignedExercise>: ExerciseSlug],
+        currentExerciseID: Identifier<AssignedExercise>? = nil,
+        activeRest: RestTimer? = nil
+    ) {
+        self.id = id
+        self.workout = workout
+        self.epoch = epoch
+        self.phase = phase
+        self.startedAt = startedAt
+        self.completedAt = completedAt
+        self.setEntries = setEntries
+        self.swaps = swaps
+        self.currentExerciseID = currentExerciseID
+        self.activeRest = activeRest
     }
 
     // MARK: - Lifecycle
@@ -208,6 +243,21 @@ public struct WorkoutSession: Sendable, Codable, Equatable {
             throw WorkoutSessionError.invalidTransition(from: phase, action: "revertSwap")
         }
         swaps[exerciseID] = nil
+    }
+
+    // MARK: - Restoration metadata (position + rest)
+
+    /// Position and rest are restoration hints, not recorded work: they may be updated
+    /// while the session is live (active or paused) and are silently ignored on terminal
+    /// phases — a completed/abandoned/superseded session's history is never rewritten.
+    public mutating func setCurrentExercise(_ exerciseID: Identifier<AssignedExercise>?) {
+        guard phase == .active || phase == .paused else { return }
+        currentExerciseID = exerciseID
+    }
+
+    public mutating func setActiveRest(_ rest: RestTimer?) {
+        guard phase == .active || phase == .paused else { return }
+        activeRest = rest
     }
 
     // MARK: - Progress

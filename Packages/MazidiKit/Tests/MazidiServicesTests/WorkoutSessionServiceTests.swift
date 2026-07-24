@@ -119,6 +119,92 @@ private func makeWorkout() -> (AssignedWorkout, AssignedExercise) {
         #expect(restored == nil)
     }
 
+    @Test func pauseAndResumeAreIdempotent() async throws {
+        let store = InMemorySyncStore()
+        let service = makeService(store: store)
+        let (workout, _) = makeWorkout()
+        _ = try await service.start(workout: workout, epoch: 1)
+
+        // Double pause: second call is a silent no-op (M3).
+        try await service.pause()
+        try await service.pause()
+        #expect(await service.currentSession?.phase == .paused)
+
+        // Double resume: second call is a silent no-op (M1).
+        try await service.resume()
+        try await service.resume()
+        #expect(await service.currentSession?.phase == .active)
+    }
+
+    @Test func restoredActiveSessionResumesWithoutError() async throws {
+        // The app was killed while active; the restored session is still `.active` (M1).
+        let store = InMemorySyncStore()
+        let (workout, _) = makeWorkout()
+        do {
+            let service = makeService(store: store)
+            _ = try await service.start(workout: workout, epoch: 1)
+        }
+        let service2 = makeService(store: store)
+        let restored = try await service2.restoreIfNeeded()
+        #expect(restored?.phase == .active)
+        try await service2.resume() // must not throw
+        #expect(await service2.currentSession?.phase == .active)
+    }
+
+    @Test func positionAndRestSurviveRestore() async throws {
+        let store = InMemorySyncStore()
+        let clock = FixedClock()
+        let (workout, squat) = makeWorkout()
+        do {
+            let service = makeService(store: store, clock: clock)
+            _ = try await service.start(workout: workout, epoch: 1)
+            try await service.updateCurrentExercise(squat.id)
+            try await service.updateActiveRest(RestTimer(durationSeconds: 120, startedAt: clock.now()))
+            try await service.pause()
+        }
+        // Relaunch 30s later: rest still running → restored with honest remaining time.
+        clock.advance(by: 30)
+        let service2 = makeService(store: store, clock: clock)
+        let restored = try await service2.restoreIfNeeded()
+        #expect(restored?.currentExerciseID == squat.id)
+        #expect(restored?.activeRest?.remainingSeconds(at: clock.now()) == 90)
+    }
+
+    @Test func elapsedRestIsRestoredAsElapsedNotRestarted() async throws {
+        let store = InMemorySyncStore()
+        let clock = FixedClock()
+        let (workout, _) = makeWorkout()
+        do {
+            let service = makeService(store: store, clock: clock)
+            _ = try await service.start(workout: workout, epoch: 1)
+            try await service.updateActiveRest(RestTimer(durationSeconds: 60, startedAt: clock.now()))
+            try await service.pause()
+        }
+        // Relaunch well after the rest finished: restored as elapsed (cleared), and the
+        // normalisation is persisted so later restores agree.
+        clock.advance(by: 300)
+        let service2 = makeService(store: store, clock: clock)
+        let restored = try await service2.restoreIfNeeded()
+        #expect(restored?.activeRest == nil)
+        let persisted = try await store.session(id: restored!.id)
+        #expect(persisted?.activeRest == nil)
+    }
+
+    @Test func restorationMetadataIsIgnoredOnTerminalPhases() async throws {
+        let store = InMemorySyncStore()
+        let clock = FixedClock()
+        let service = makeService(store: store, clock: clock)
+        let (workout, squat) = makeWorkout()
+        _ = try await service.start(workout: workout, epoch: 1)
+        _ = try await service.complete()
+        // Completed history is never rewritten by restoration hints.
+        try await service.updateCurrentExercise(squat.id)
+        try await service.updateActiveRest(RestTimer(durationSeconds: 60, startedAt: clock.now()))
+        let current = await service.currentSession
+        #expect(current?.currentExerciseID == nil)
+        #expect(current?.activeRest == nil)
+    }
+
     @Test func completedSessionIsNotResumable() async throws {
         let store = InMemorySyncStore()
         let (workout, _) = makeWorkout()
