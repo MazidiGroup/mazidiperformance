@@ -57,6 +57,21 @@ swiftformat --lint .   # config in .swiftformat (pending)
 swiftlint              # config in .swiftlint.yml (pending)
 ```
 
+## Authentication in development and tests (ADR-0008)
+
+- **Dev identities (DEBUG only):** `dev-client-001`, `dev-client-002`, `dev-coach-001`
+  (plus deliberately broken `dev-no-role` / `dev-conflicted` fixtures for error-state
+  tests). Compiled out of Release entirely; Release's provider slot fails typed and
+  honest (no backend exists — R-01).
+- **UI-test launch environment (DEBUG only):**
+  - `MAZIDI_STORE_MODE=ephemeral` — fresh in-memory database for the process.
+  - `MAZIDI_STORE_DIR=<base>` — account-scoped durable store under an explicit base.
+  - `MAZIDI_AUTH_RESET=1` — forget any stored session at launch (the simulator Keychain
+    outlives app launches; journeys state their starting condition explicitly).
+- Tokens live in the Keychain only (`com.mazidigroup.mazidi.auth`,
+  after-first-unlock-this-device-only). Never commit, log, or store credentials anywhere
+  else; `AuthCredentials`' description redacts tokens by construction.
+
 ## CI toolchain gap — build against Swift 6.1 (Xcode 16.4), not just local
 
 Local validation runs Xcode 26.x (Swift 6.3); CI pins **Xcode 16.4 (Swift 6.1)** on a
