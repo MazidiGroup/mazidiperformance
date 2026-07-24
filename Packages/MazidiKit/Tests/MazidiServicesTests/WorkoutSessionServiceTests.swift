@@ -77,6 +77,48 @@ private func makeWorkout() -> (AssignedWorkout, AssignedExercise) {
         #expect(restored?.setEntries.count == 1)
     }
 
+    @Test func exitKeepsProgressAndSessionResumable() async throws {
+        let store = InMemorySyncStore()
+        let (workout, squat) = makeWorkout()
+        do {
+            let service = makeService(store: store)
+            _ = try await service.start(workout: workout, epoch: 1)
+            _ = try await service.recordSet(exerciseID: squat.id, setIndex: 0, value: .repsAndLoad(reps: 6, loadKg: 80))
+            try await service.exit() // 5a/5g "nothing lost"
+        }
+        // "Relaunch": the exited session is resumable from Today (5b) with its work intact.
+        let service2 = makeService(store: store)
+        let restored = try await service2.restoreIfNeeded()
+        #expect(restored?.phase == .paused)
+        #expect(restored?.setEntries.count == 1)
+        try await service2.resume()
+        let resumed = await service2.currentSession
+        #expect(resumed?.phase == .active)
+    }
+
+    @Test func discardAbandonsEnqueuesOperationAndKeepsHistory() async throws {
+        let store = InMemorySyncStore()
+        let service = makeService(store: store)
+        let (workout, squat) = makeWorkout()
+        let session = try await service.start(workout: workout, epoch: 1)
+        _ = try await service.recordSet(exerciseID: squat.id, setIndex: 0, value: .repsAndLoad(reps: 6, loadKg: 80))
+
+        try await service.discard()
+        let current = await service.currentSession
+        #expect(current?.phase == .abandoned)
+        #expect(current?.setEntries.count == 1) // history kept, never silently discarded
+
+        // The abandon is a durable, ordered operation like any other mutation (ADR-0003).
+        let ops = try await store.operations(inAggregate: session.id.rawValue)
+        #expect(ops.map(\.kind) == [.workoutSessionStarted, .setRecorded, .workoutSessionAbandoned])
+        #expect(ops.map(\.sequence) == [0, 1, 2])
+
+        // An abandoned session is not offered for resume.
+        let service2 = makeService(store: store)
+        let restored = try await service2.restoreIfNeeded()
+        #expect(restored == nil)
+    }
+
     @Test func completedSessionIsNotResumable() async throws {
         let store = InMemorySyncStore()
         let (workout, _) = makeWorkout()
