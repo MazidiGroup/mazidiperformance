@@ -19,6 +19,8 @@ let package = Package(
         .library(name: "MazidiSync", targets: ["MazidiSync"]),
         .library(name: "MazidiServices", targets: ["MazidiServices"]),
         .library(name: "MazidiNetworking", targets: ["MazidiNetworking"]),
+        .library(name: "MazidiContent", targets: ["MazidiContent"]),
+        .executable(name: "mazidi-content-audit", targets: ["mazidi-content-audit"]),
     ],
     dependencies: [
         // Pinned EXACTLY (reproducibility): Package.resolved is not committed for this
@@ -42,6 +44,12 @@ let package = Package(
             .product(name: "GRDB", package: "GRDB.swift"),
         ]),
         .target(name: "MazidiNetworking", dependencies: ["MazidiDomain", "MazidiFoundations"]),
+        // Exercise catalogue & media manifest models (ADR-0010). Foundation-only.
+        .target(name: "MazidiContent", dependencies: ["MazidiFoundations"]),
+        // Read-only source-library audit / catalogue generator (ADR-0010).
+        // macOS-only developer tooling (shells out to zipinfo/unzip; CryptoKit
+        // for SHA-256 — same accepted-exception reasoning as MazidiAuth).
+        .executableTarget(name: "mazidi-content-audit", dependencies: ["MazidiContent"]),
         .target(name: "MazidiServices", dependencies: [
             "MazidiDomain", "MazidiPersistence", "MazidiSync", "MazidiNetworking", "MazidiFoundations",
         ]),
@@ -52,5 +60,6 @@ let package = Package(
             "MazidiPersistenceGRDB", "MazidiServices", "MazidiAuth",
         ]),
         .testTarget(name: "MazidiAuthTests", dependencies: ["MazidiAuth"]),
+        .testTarget(name: "MazidiContentTests", dependencies: ["MazidiContent"]),
     ]
 )
