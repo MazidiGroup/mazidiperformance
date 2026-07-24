@@ -29,9 +29,25 @@ protocol ConnectivityControlling: AnyObject, Sendable {
 }
 
 /// The three store roles one durable database satisfies together (single transaction
-/// scope). Both GRDBStore and the in-memory reference store conform.
-typealias ClientStore =
-    any WorkoutSessionRepository & AuditEventStore & SyncOperationStore<SyncOperation>
+/// scope). All three handles reference the SAME underlying store instance — the generic
+/// initializer is the only way to build one, so the roles can never be split across
+/// different databases. Held as separate existentials rather than a protocol composition
+/// because the CI-pinned Swift 6.1 compiler (Xcode 16.4) rejects parameterized protocols
+/// inside compositions (`… & SyncOperationStore<SyncOperation>`), while plain
+/// parameterized existentials like `SyncOutboxStore` compile on both toolchains.
+struct ClientStore {
+    let sessions: any WorkoutSessionRepository
+    let operations: SyncOutboxStore
+    let audit: any AuditEventStore
+
+    init<S>(_ store: S)
+        where S: WorkoutSessionRepository, S: AuditEventStore,
+              S: SyncOperationStore, S.Operation == SyncOperation {
+        self.sessions = store
+        self.operations = store
+        self.audit = store
+    }
+}
 
 // MARK: - Composition root for the Client slice
 
@@ -91,11 +107,15 @@ final class ClientEnvironment {
         self.store = resolvedStore
         self.transport = transport
         self.service = WorkoutSessionService(
-            store: .init(sessions: resolvedStore, operations: resolvedStore, audit: resolvedStore),
+            store: .init(
+                sessions: resolvedStore.sessions,
+                operations: resolvedStore.operations,
+                audit: resolvedStore.audit
+            ),
             clock: clock,
             actorID: ClientFixtures.devClientActorID
         )
-        self.syncEngine = SyncEngine(store: resolvedStore, transport: transport)
+        self.syncEngine = SyncEngine(store: resolvedStore.operations, transport: transport)
     }
 
     /// Store selection. Durable GRDB in Application Support is the normal path; the
@@ -109,11 +129,11 @@ final class ClientEnvironment {
         #if DEBUG
         let env = ProcessInfo.processInfo.environment
         if env["MAZIDI_STORE_MODE"] == "ephemeral", let ephemeral = try? GRDBStore.inMemory() {
-            return (ephemeral, .intentionallyEphemeral)
+            return (ClientStore(ephemeral), .intentionallyEphemeral)
         }
         if let dir = env["MAZIDI_STORE_DIR"],
            let relocated = try? GRDBStore.open(directory: URL(fileURLWithPath: dir, isDirectory: true)) {
-            return (relocated, Self.health(of: relocated))
+            return (ClientStore(relocated), Self.health(of: relocated))
         }
         #endif
         do {
@@ -124,14 +144,14 @@ final class ClientEnvironment {
             let store = try GRDBStore.open(
                 directory: base.appendingPathComponent("MazidiPerformance", isDirectory: true)
             )
-            return (store, Self.health(of: store))
+            return (ClientStore(store), Self.health(of: store))
         } catch {
             // Unrecoverable open failure (the corrupt-file policy already ran and the
             // damaged files are preserved on disk — MIGRATIONS.md). Keep this launch
             // usable with an in-memory store, and surface the condition — never a
             // silent empty state.
             log.error("Durable store unavailable (\(error)); running in-memory for this launch")
-            return (InMemorySyncStore(), .ephemeralFallback)
+            return (ClientStore(InMemorySyncStore()), .ephemeralFallback)
         }
     }
 
@@ -146,7 +166,7 @@ final class ClientEnvironment {
 
     /// Pending (not-yet-acknowledged) operation count — the truth behind "waiting to sync".
     func pendingOperationCount() async -> Int {
-        (try? await store.pendingOperations().count) ?? 0
+        (try? await store.operations.pendingOperations().count) ?? 0
     }
 
     func makeWorkoutModel() -> ClientWorkoutModel {
