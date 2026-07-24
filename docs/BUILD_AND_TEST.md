@@ -29,6 +29,27 @@ xcodebuild -project MazidiPerformance.xcodeproj -scheme MazidiPerformance \
   -destination 'platform=iOS Simulator,name=iPhone 16 Pro' build test
 ```
 
+## Dependencies — updating GRDB (deliberate, never silent)
+
+GRDB is pinned **exactly** in `Packages/MazidiKit/Package.swift`
+(`.package(url: …GRDB.swift.git, exact: "7.11.1")`). `Package.resolved` is not
+committed, so the manifest's exact requirement *is* the lockfile: local builds, package
+tests and CI all resolve the identical version, and CI can never drift to a newer release
+without a reviewed manifest change.
+
+To move to a later GRDB deliberately:
+
+1. Read the GRDB release notes for every version being crossed (migration notes,
+   SQLite/WAL behaviour, minimum platforms, Swift version).
+2. Edit the `exact:` requirement to the new version in `Packages/MazidiKit/Package.swift`.
+3. Clean-resolve and verify: `rm -rf .build Package.resolved && swift package resolve`,
+   confirm the resolved version matches the new pin.
+4. Run the full ladder locally: `swift test` (all suites, including
+   `MazidiPersistenceGRDBTests`), `xcodegen generate`, Debug simulator test suite,
+   Release simulator build.
+5. Commit the manifest change on its own with the release-notes rationale; let CI confirm
+   on the PR before merge.
+
 ## Static checks
 
 ```bash

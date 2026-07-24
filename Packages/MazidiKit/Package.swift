@@ -20,7 +20,11 @@ let package = Package(
         .library(name: "MazidiNetworking", targets: ["MazidiNetworking"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.0.0"),
+        // Pinned EXACTLY (reproducibility): Package.resolved is not committed for this
+        // local package, so the manifest itself is the lockfile — app, package tests and
+        // CI all resolve the identical revision. Deliberate upgrades follow the
+        // "Updating GRDB" procedure in docs/BUILD_AND_TEST.md.
+        .package(url: "https://github.com/groue/GRDB.swift.git", exact: "7.11.1"),
     ],
     targets: [
         .target(name: "MazidiFoundations"),
