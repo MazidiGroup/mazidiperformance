@@ -70,7 +70,10 @@ outbox operations, extending the ADR-0003 invariant to programming writes.
 **Additive and non-destructive: every existing v1/v2 row is preserved and reads unchanged.**
 New columns are nullable or defaulted; no existing row is rewritten, and no row is ever
 reassigned across accounts (the migration runs per account-scoped database, in place).
-Forward-only migrations are not reversible — this one is safe because it only adds.
+**Rollback limitation:** forward-only migrations are not reversible (ADR-0002, KNOWN_ISSUES
+L9); `v3` is safe because it only adds, and the only recovery from a bad migration is the
+account-scoped quarantine path (the damaged database is preserved and replaced), never a
+down-migration.
 
 | Table / column | Why it exists |
 |---|---|
