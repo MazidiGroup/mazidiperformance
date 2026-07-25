@@ -17,7 +17,7 @@ import MazidiSync
     }
 
     private func change(_ v: Int, _ remote: String, op: ChangeOp = .upsert, schema: Int = 1) -> ChangeEnvelope {
-        ChangeEnvelope(entityType: .workoutAssignment, remoteID: RemoteRecordID(remote),
+        ChangeEnvelope(entityType: .auditEvent, remoteID: RemoteRecordID(remote),
                        serverVersion: ServerRecordVersion(v), op: op, payload: Data("x".utf8), payloadSchemaVersion: schema)
     }
 
@@ -43,7 +43,7 @@ import MazidiSync
         let cursor = try #require(try await store.loadSyncCursor(stream: "default"))
         #expect(cursor.lastServerVersion == 2)
         #expect(cursor.token == "cur")
-        #expect(try await store.remoteRecordState(entityType: "workoutAssignment", localID: "r2")?.serverVersion == 2)
+        #expect(try await store.remoteRecordState(entityType: "auditEvent", localID: "r2")?.serverVersion == 2)
     }
 
     // Incremental pull continues from the cursor.
@@ -112,7 +112,7 @@ import MazidiSync
         let store = try makeStore(); let backend = FakeSyncBackend(); let clock = FixedClock(t0)
         await backend.enqueuePull(.success(response([change(1, "r1", op: .tombstone)])))
         _ = try await engine(store, backend, clock: clock).pullOnce(context: context())
-        #expect(try await store.remoteRecordState(entityType: "workoutAssignment", localID: "r1")?.tombstoned == true)
+        #expect(try await store.remoteRecordState(entityType: "auditEvent", localID: "r1")?.tombstoned == true)
     }
 
     // Account-scoped cursor isolation: applying to account A never touches account B.

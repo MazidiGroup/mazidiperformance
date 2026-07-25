@@ -1,13 +1,14 @@
+#if DEBUG
 import Foundation
 import MazidiAuth
 import MazidiNetworking
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Deterministic in-process backend (ADR-0012 §10). The ONLY implementation of
-//  SyncBackendTransport until a real backend exists — it never touches the network and
-//  is reproducible run-to-run. Intended for tests and DEBUG development harnesses; a
-//  Release build must never select it as a production path (no host is configured, so
-//  the real transport is inert and this fake is wired only behind DEBUG/test seams).
+//  SyncBackendTransport. Compiled out of Release entirely (`#if DEBUG`) so it can never
+//  be selected as a production path and never appears in the shipping binary — the
+//  Release provider slot stays failing/honest until a real backend exists. Never touches
+//  the network; reproducible run-to-run. For tests and DEBUG development harnesses only.
 // ─────────────────────────────────────────────────────────────────────────────
 
 public actor FakeSyncBackend: SyncBackendTransport {
@@ -16,6 +17,13 @@ public actor FakeSyncBackend: SyncBackendTransport {
     private var pullQueue: [Result<PullChangesResponse, TransportError>] = []
     private var revocation: RevocationCheck = .active
     private var deliveryAck: Result<DeliveryAck, TransportError> = .failure(.unreachable)
+    /// Dev connectivity toggle: when offline the transport is unreachable (ops stay queued).
+    private var online = true
+    /// When true, a mutation with no explicit configured result is auto-acknowledged
+    /// (applied) with a monotonic server version — used by the in-app dev drain so the
+    /// honest offline → syncing → up-to-date flow works without pre-configuring each op.
+    private var autoAck = false
+    private var nextVersion = 1
     /// Every mutation id ever uploaded, in order — lets tests assert that a retry reuses
     /// the same deterministic id (no duplicate mutation).
     public private(set) var pushedMutationIDs: [MutationID] = []
@@ -30,6 +38,9 @@ public actor FakeSyncBackend: SyncBackendTransport {
     public func enqueuePull(_ response: Result<PullChangesResponse, TransportError>) { pullQueue.append(response) }
     public func setRevocation(_ check: RevocationCheck) { revocation = check }
     public func setDeliveryAck(_ ack: Result<DeliveryAck, TransportError>) { deliveryAck = ack }
+    public func setOnline(_ value: Bool) { online = value }
+    public func setAutoAck(_ value: Bool) { autoAck = value }
+    public var isOnline: Bool { online }
 
     // MARK: SyncBackendTransport
 
@@ -37,21 +48,28 @@ public actor FakeSyncBackend: SyncBackendTransport {
         if Task.isCancelled { return .failure(.cancelled) }
         pushCallCount += 1
         pushedMutationIDs.append(contentsOf: batch.mutations.map(\.mutationID))
+        guard online else { return .failure(.unreachable) }
         if let pushError { return .failure(pushError) }
-        // Only echo results for mutations actually in the batch AND configured; an
-        // unconfigured mutation gets no ack entry (the engine keeps it queued).
         var results: [MutationID: MutationResult] = [:]
         for mutation in batch.mutations {
             if let configured = pushResultsByMutation[mutation.mutationID] {
                 results[mutation.mutationID] = configured
+            } else if autoAck {
+                results[mutation.mutationID] = .applied(ServerRecordVersion(nextVersion))
+                nextVersion += 1
             }
+            // Otherwise no ack entry → the engine keeps it queued.
         }
         return .success(PushAck(results: results))
     }
 
     public func pull(_ request: PullChangesRequest, context: AuthenticatedRequestContext) async -> Result<PullChangesResponse, TransportError> {
         if Task.isCancelled { return .failure(.cancelled) }
-        guard !pullQueue.isEmpty else { return .failure(.unreachable) }
+        guard online else { return .failure(.unreachable) }
+        guard !pullQueue.isEmpty else {
+            // Nothing queued: an empty, up-to-date response (idempotent).
+            return .success(PullChangesResponse(changes: [], nextCursorToken: request.cursorToken, hasMore: false, serverSchemaVersion: 1, accountContext: request.accountContext))
+        }
         return pullQueue.removeFirst()
     }
 
@@ -62,3 +80,4 @@ public actor FakeSyncBackend: SyncBackendTransport {
 
     public func checkRevocation(context: AuthenticatedRequestContext) async -> RevocationCheck { revocation }
 }
+#endif

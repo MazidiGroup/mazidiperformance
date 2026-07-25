@@ -1,14 +1,16 @@
 import Foundation
+import MazidiDomain
 import MazidiFoundations
 import MazidiNetworking
 import MazidiPersistence
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Backend pull engine (ADR-0012 §4). Client-initiated (no socket). Applies remote
-//  changes and advances the account-scoped cursor in ONE transaction; the cursor is
-//  monotonic and never regresses; duplicate/out-of-order changes (serverVersion ≤ the
-//  cursor) are harmless; tombstones are explicit; an unknown future schema is quarantined
-//  honestly (not applied); a pull failure preserves the prior cursor; sign-out / account
+//  Backend pull engine (ADR-0012 §4). Client-initiated (no socket). Materialises
+//  decoded domain rows (assignment/relationship) AND advances the account-scoped cursor
+//  in ONE transaction; the cursor is monotonic and never regresses; duplicate/out-of-order
+//  changes (serverVersion ≤ the cursor) are harmless; tombstones are explicit; an unknown
+//  future schema OR an undecodable materialisable payload is quarantined honestly (nothing
+//  applied, cursor preserved); a pull failure preserves the prior cursor; sign-out / account
 //  switch prevents any further application (session-generation guard).
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -19,6 +21,8 @@ public enum BackendPullOutcome: Sendable, Equatable {
     case ignoredStale
     /// A future schema was encountered; nothing applied, cursor preserved, surfaced honestly.
     case quarantinedUnsupportedSchema(serverSchemaVersion: Int)
+    /// A materialisable payload could not be decoded; nothing applied, cursor preserved.
+    case quarantinedUndecodablePayload(entityType: String)
     /// The transport failed; the prior cursor is preserved.
     case transportFailed(TransportError)
 }
@@ -32,9 +36,10 @@ public actor BackendPullEngine {
     private let clock: any AppClock
     private let stream: String
     private let maxChanges: Int
-    /// Session-generation guard: false once the session signed out / switched. Checked
-    /// AFTER the network await so a delayed prior-session response is never applied.
     private let isActive: @Sendable () -> Bool
+    private let audit: (any AuditEventStore)?
+    private let actorID: UUID
+    private let decoder = JSONDecoder()
 
     public init(
         syncStore: any BackendSyncStore,
@@ -42,7 +47,9 @@ public actor BackendPullEngine {
         clock: any AppClock,
         stream: String = "default",
         maxChanges: Int = 200,
-        isActive: @escaping @Sendable () -> Bool = { true }
+        isActive: @escaping @Sendable () -> Bool = { true },
+        audit: (any AuditEventStore)? = nil,
+        actorID: UUID = UUID()
     ) {
         self.syncStore = syncStore
         self.transport = transport
@@ -50,6 +57,8 @@ public actor BackendPullEngine {
         self.stream = stream
         self.maxChanges = maxChanges
         self.isActive = isActive
+        self.audit = audit
+        self.actorID = actorID
     }
 
     @discardableResult
@@ -76,22 +85,38 @@ public actor BackendPullEngine {
         else { return .quarantinedUnsupportedSchema(serverSchemaVersion: response.serverSchemaVersion) }
 
         // Monotonic: accept only changes strictly beyond the cursor; ignore duplicates/
-        // out-of-order. The cursor never regresses.
-        var applications: [PulledChangeApplication] = []
+        // out-of-order. Decode materialisable payloads; an undecodable one quarantines the
+        // batch (never advance past a change whose domain effect can't be applied).
+        var materializations: [PulledMaterialization] = []
         var ignored = 0
         var maxSeen = existing.lastServerVersion
         for change in response.changes {
             maxSeen = max(maxSeen, change.serverVersion.rawValue)
-            if change.serverVersion.rawValue > existing.lastServerVersion {
-                applications.append(PulledChangeApplication(
-                    entityType: change.entityType.rawValue,
-                    remoteID: change.remoteID.rawValue,
-                    serverVersion: change.serverVersion.rawValue,
-                    tombstoned: change.op == .tombstone
-                ))
+            guard change.serverVersion.rawValue > existing.lastServerVersion else { ignored += 1; continue }
+
+            let entity: PulledMaterialization.Entity
+            if change.op == .tombstone {
+                entity = .tombstone
             } else {
-                ignored += 1
+                switch change.entityType {
+                case .workoutAssignment:
+                    guard let data = change.payload, let assignment = try? decoder.decode(WorkoutAssignment.self, from: data) else {
+                        return .quarantinedUndecodablePayload(entityType: change.entityType.rawValue)
+                    }
+                    entity = .assignment(assignment)
+                case .relationship:
+                    guard let data = change.payload, let relationship = try? decoder.decode(Relationship.self, from: data) else {
+                        return .quarantinedUndecodablePayload(entityType: change.entityType.rawValue)
+                    }
+                    entity = .relationship(relationship)
+                default:
+                    entity = .trackVersionOnly
+                }
             }
+            materializations.append(PulledMaterialization(
+                entityType: change.entityType.rawValue, remoteID: change.remoteID.rawValue,
+                serverVersion: change.serverVersion.rawValue, entity: entity
+            ))
         }
 
         let advanced = SyncCursorState(
@@ -99,7 +124,20 @@ public actor BackendPullEngine {
             lastServerVersion: maxSeen,                       // max ⇒ never regresses
             schemaVersion: existing.schemaVersion
         )
-        try await syncStore.applyPullChanges(applications, advancingCursorTo: advanced, stream: stream, at: clock.now())
-        return .applied(applied: applications.count, ignored: ignored, hasMore: response.hasMore)
+        try await syncStore.applyPullChanges(materializations, advancingCursorTo: advanced, stream: stream, at: clock.now())
+
+        if !materializations.isEmpty { await emitPullApplied(count: materializations.count, version: advanced.lastServerVersion) }
+        return .applied(applied: materializations.count, ignored: ignored, hasMore: response.hasMore)
+    }
+
+    /// pullChangesApplied audit (ADR-0006 privacy: counts + version only, never content).
+    private func emitPullApplied(count: Int, version: Int) async {
+        guard let audit else { return }
+        guard let previous = try? await audit.latestHash() else { return }
+        try? await audit.append(AuditEvent(
+            kind: .pullChangesApplied, actorID: actorID,
+            subjectDescription: "stream:\(stream)", occurredAt: clock.now(), previousHash: previous,
+            payload: ["applied": "\(count)", "version": "\(version)"]
+        ))
     }
 }

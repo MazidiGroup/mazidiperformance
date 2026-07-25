@@ -1,4 +1,5 @@
 import Foundation
+import MazidiDomain
 import MazidiFoundations
 import MazidiNetworking
 import MazidiPersistence
@@ -55,6 +56,8 @@ public actor BackendPushEngine {
     /// Session-generation guard: false once the session signed out / switched / was revoked.
     /// Checked BEFORE every send so no pending work uploads after revocation (ADR-0012 §8).
     private let isActive: @Sendable () -> Bool
+    private let audit: (any AuditEventStore)?
+    private let actorID: UUID
 
     public init(
         outbox: SyncOutboxStore,
@@ -63,7 +66,9 @@ public actor BackendPushEngine {
         clock: any AppClock,
         random: @escaping @Sendable () -> Double = { Double.random(in: 0..<1) },
         config: BackendPushConfig = BackendPushConfig(),
-        isActive: @escaping @Sendable () -> Bool = { true }
+        isActive: @escaping @Sendable () -> Bool = { true },
+        audit: (any AuditEventStore)? = nil,
+        actorID: UUID = UUID()
     ) {
         self.outbox = outbox
         self.syncStore = syncStore
@@ -72,6 +77,19 @@ public actor BackendPushEngine {
         self.random = random
         self.config = config
         self.isActive = isActive
+        self.audit = audit
+        self.actorID = actorID
+    }
+
+    /// Append a sync audit event (ADR-0006 privacy: ids/counts only — never tokens, bodies,
+    /// notes, credentials, or signed URLs).
+    private func emit(_ kind: AuditEvent.Kind, subject: String, payload: [String: String] = [:]) async {
+        guard let audit else { return }
+        guard let previous = try? await audit.latestHash() else { return }
+        try? await audit.append(AuditEvent(
+            kind: kind, actorID: actorID, subjectDescription: subject,
+            occurredAt: clock.now(), previousHash: previous, payload: payload
+        ))
     }
 
     /// Deterministic backoff delay for the next attempt (exponential + injected jitter),
@@ -116,6 +134,7 @@ public actor BackendPushEngine {
             envelopes.append(envelope(for: marked, context: context))
         }
         let batch = PushMutationBatch(accountContext: context.accountID, deviceInstallationID: context.deviceInstallationID, mutations: envelopes)
+        await emit(.syncBatchAttempted, subject: "batch:\(batch.batchID.uuidString)", payload: ["mutations": "\(envelopes.count)"])
 
         switch await transport.push(batch, context: context) {
         case let .success(ack):
@@ -132,6 +151,7 @@ public actor BackendPushEngine {
                 case let .rejected(reason):
                     outcome = .deadLettered(reason: Self.describe(reason))
                     summary.deadLettered += 1
+                    await emit(.mutationPermanentlyRejected, subject: "\(op.entityType.rawValue):\(op.aggregateID.uuidString)")
                 case let .needsRetry(retry):
                     let due = now.addingTimeInterval(backoffDelay(attempt: attempt, retryAfter: retry.retryAfter))
                     outcome = .retry(nextAttemptAt: due, reason: "server requested retry")
@@ -151,6 +171,8 @@ public actor BackendPushEngine {
                 ))
             }
             try await syncStore.applyPushResults(applications, at: now)
+            await emit(.syncBatchAcknowledged, subject: "batch:\(batch.batchID.uuidString)",
+                       payload: ["acknowledged": "\(summary.acknowledged)", "rejected": "\(summary.deadLettered)", "retried": "\(summary.retried)"])
 
         case let .failure(error):
             // Whole-batch transport failure: re-queue every attempted op with backoff,
@@ -159,7 +181,7 @@ public actor BackendPushEngine {
             // A revoked transport signal is surfaced so the caller routes it to the
             // SessionCoordinator; the ops stay queued (never dead-lettered) and the next
             // drain is blocked by the isActive guard once the session is revoked.
-            if case .revoked = error { summary.revoked = true }
+            if case .revoked = error { summary.revoked = true; await emit(.revocationDiscovered, subject: "account:\(context.accountID)") }
             let retryAfter: TimeInterval? = { if case let .rateLimited(limit) = error { return limit.retryAfter }; return nil }()
             var applications: [PushOutcomeApplication] = []
             for op in due {

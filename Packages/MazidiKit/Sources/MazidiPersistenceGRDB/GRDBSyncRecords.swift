@@ -351,18 +351,32 @@ extension GRDBStore: BackendSyncStore, RelationshipRepository {
         }
     }
 
-    public func applyPullChanges(_ changes: [PulledChangeApplication], advancingCursorTo cursor: SyncCursorState, stream: String, at now: Date) async throws {
+    public func applyPullChanges(_ materializations: [PulledMaterialization], advancingCursorTo cursor: SyncCursorState, stream: String, at now: Date) async throws {
         try await writer.write { db in
-            for change in changes {
-                // Track the pulled record's remote id / version / tombstone. Until the
-                // domain row is materialised (later CG), the remote id doubles as the local
-                // key; a save() is an idempotent upsert (re-applying a change is harmless).
+            for change in materializations {
+                var localID = change.remoteID
+                var tombstoned = false
+                switch change.entity {
+                case let .assignment(assignment):
+                    // Materialise the delivered assignment (idempotent upsert) in the SAME
+                    // transaction as the cursor advance.
+                    try WorkoutAssignmentRecord(assignment: assignment).save(db)
+                    localID = assignment.id.rawValue.uuidString
+                case let .relationship(relationship):
+                    try RelationshipRow(relationship: relationship).save(db)
+                    localID = relationship.id.rawValue.uuidString
+                case .tombstone:
+                    tombstoned = true
+                case .trackVersionOnly:
+                    break
+                }
+                // Track remote id / version / tombstone (idempotent upsert).
                 try RemoteRecordRow(
                     entityType: change.entityType,
-                    localId: change.remoteID,
+                    localId: localID,
                     remoteId: change.remoteID,
                     serverVersion: change.serverVersion,
-                    tombstoned: change.tombstoned,
+                    tombstoned: tombstoned,
                     lastSyncedAt: now
                 ).save(db)
             }

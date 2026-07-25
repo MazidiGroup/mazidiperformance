@@ -1,4 +1,6 @@
 import Foundation
+import MazidiDomain
+import MazidiFoundations
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Backend-sync persistence boundary (ADR-0012). Primitive-typed on purpose: this
@@ -41,20 +43,33 @@ public struct SyncCursorState: Sendable, Equatable {
     public static let initial = SyncCursorState(token: nil, lastServerVersion: 0, schemaVersion: 1)
 }
 
-/// One accepted remote change to record when a pull batch is applied (CG5). The domain-row
-/// materialisation + conflict resolution extends this in later commit groups; here it tracks
-/// the remote id, server version, and tombstone flag.
-public struct PulledChangeApplication: Sendable, Equatable {
+/// One accepted remote change to apply when a pull batch is materialised (ADR-0012 §4).
+/// A materialisable payload (assignment / relationship) is decoded to its domain value and
+/// inserted **in the same transaction** as the cursor advance; other entity types are
+/// version/tombstone-tracked only. The cursor never advances past a change whose domain
+/// effect was not durably applied.
+public struct PulledMaterialization: Sendable {
+    public enum Entity: Sendable {
+        /// A decoded assignment to upsert (Coach→Client delivery).
+        case assignment(WorkoutAssignment)
+        /// A decoded relationship to upsert.
+        case relationship(Relationship)
+        /// An explicit remote deletion.
+        case tombstone
+        /// An entity we track by version only (not materialised locally).
+        case trackVersionOnly
+    }
+
     public let entityType: String
     public let remoteID: String
     public let serverVersion: Int
-    public let tombstoned: Bool
+    public let entity: Entity
 
-    public init(entityType: String, remoteID: String, serverVersion: Int, tombstoned: Bool) {
+    public init(entityType: String, remoteID: String, serverVersion: Int, entity: Entity) {
         self.entityType = entityType
         self.remoteID = remoteID
         self.serverVersion = serverVersion
-        self.tombstoned = tombstoned
+        self.entity = entity
     }
 }
 
@@ -95,9 +110,10 @@ public protocol BackendSyncStore: Sendable {
     /// Read a remote-record mapping (CG5).
     func remoteRecordState(entityType: String, localID: String) async throws -> RemoteRecordState?
 
-    /// Apply a pull batch in ONE transaction: record each accepted change's remote id /
-    /// server version / tombstone AND advance the cursor together (ADR-0012 §4). Either the
-    /// whole batch + the cursor advance land, or neither — the cursor never advances past
-    /// un-applied changes.
-    func applyPullChanges(_ changes: [PulledChangeApplication], advancingCursorTo cursor: SyncCursorState, stream: String, at now: Date) async throws
+    /// Apply a pull batch in ONE transaction: materialise each decoded domain row
+    /// (assignment/relationship), record every change's remote id / server version /
+    /// tombstone, AND advance the cursor together (ADR-0012 §4). Either the whole batch +
+    /// the cursor advance land, or neither — the cursor never advances past a change whose
+    /// domain effect was not durably applied.
+    func applyPullChanges(_ materializations: [PulledMaterialization], advancingCursorTo cursor: SyncCursorState, stream: String, at now: Date) async throws
 }
