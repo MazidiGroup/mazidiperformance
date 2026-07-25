@@ -69,6 +69,10 @@ struct CoachRootView: View {
     @ViewBuilder private func workoutList(_ model: CoachProgrammingModel) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: MazidiMetric.stackSpacing) {
+                HStack {
+                    Spacer()
+                    CoachSyncStatusView(status: model.syncStatus)
+                }
                 if model.templates.isEmpty {
                     MessageState(
                         systemImage: "square.and.pencil",

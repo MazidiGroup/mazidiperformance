@@ -87,11 +87,16 @@ final class ClientEnvironment {
     let storeHealth: StoreHealth
 
     private let store: ClientStore
-    private let transport: FixtureSyncTransport
     let service: WorkoutSessionService
-    let syncEngine: SyncEngine
 
-    var connectivity: FixtureSyncTransport { transport }
+    /// Generation guard shared with the sync engines; flipped false on invalidate().
+    private let activeFlag = SyncActiveFlag()
+    /// DEBUG-only driver exercising the real BackendPushEngine + BackendPullEngine against
+    /// the fake backend (nil in Release / on an in-memory fallback / injected test store).
+    /// Replaces the interim SyncEngine+FixtureSyncTransport drain.
+    #if DEBUG
+    private(set) var syncDriver: BackendSyncDriver?
+    #endif
 
     /// The authenticated account this environment serves.
     let accountID: AccountID
@@ -115,13 +120,11 @@ final class ClientEnvironment {
         self.media = media
         self.assignedWorkout = assignedWorkout
 
-        let (resolvedStore, health, close) = store.map { ($0, StoreHealth.durable, {}) }
-            ?? Self.makeStore(accountID: accountID)
+        let (resolvedStore, health, close, grdb): (ClientStore, StoreHealth, () -> Void, GRDBStore?) =
+            store.map { ($0, StoreHealth.durable, {}, nil) } ?? Self.makeStore(accountID: accountID)
         self.storeHealth = health
         self.closeStore = close
-        let transport = FixtureSyncTransport()
         self.store = resolvedStore
-        self.transport = transport
         self.service = WorkoutSessionService(
             store: .init(
                 sessions: resolvedStore.sessions,
@@ -133,15 +136,56 @@ final class ClientEnvironment {
             // Deterministic per-account actor identity (never the raw account ID).
             actorID: accountID.stableActorUUID
         )
-        self.syncEngine = SyncEngine(store: resolvedStore.operations, transport: transport)
+        #if DEBUG
+        if let grdb {
+            let flag = activeFlag
+            self.syncDriver = BackendSyncDriver(store: grdb, accountID: accountID, clock: clock, isActive: { flag.isActive })
+        }
+        #endif
     }
 
     /// Sign-out/switch teardown (ADR-0008 §8): best-effort local audit record, then close
     /// the database so every later repository call throws — account data becomes
     /// unreachable through this environment. Idempotent.
+    /// Dev connectivity state (DEBUG). Release has no fake backend → offline/inert.
+    var isOnline: Bool {
+        #if DEBUG
+        syncDriver?.isOnline ?? false
+        #else
+        false
+        #endif
+    }
+
+    func setOnline(_ value: Bool) async {
+        #if DEBUG
+        await syncDriver?.setOnline(value)
+        #endif
+    }
+
+    /// Route a confirmed transport revocation to the session layer (ADR-0012 §8). DEBUG only
+    /// (the fake backend is the only source of a revocation signal today).
+    func setRevocationHandler(_ handler: @escaping @Sendable @MainActor () -> Void) {
+        #if DEBUG
+        syncDriver?.onRevocation = handler
+        #endif
+    }
+
+    /// Push+pull the account's outbox/changes through the real engines (DEBUG fake backend).
+    /// Generation-guarded; inert in Release (ops stay queued honestly). Returns the summary
+    /// so the honest sync status can be derived; `nil` when there is no driver.
+    func drainSync() async -> BackendPushSummary? {
+        guard !isInvalidated else { return nil }
+        #if DEBUG
+        return await syncDriver?.drain()
+        #else
+        return nil
+        #endif
+    }
+
     func invalidate() {
         guard !isInvalidated else { return }
         isInvalidated = true
+        activeFlag.deactivate()   // stop the sync engines before closing (generation guard)
         let store = store
         let actorID = accountID.stableActorUUID
         let close = closeStore
@@ -170,19 +214,19 @@ final class ClientEnvironment {
     /// - `MAZIDI_STORE_DIR=<base>` — account-scoped store under an explicit BASE
     ///   directory (isolation for relaunch/account-switch UI tests).
     /// Neither override is compiled into Release builds.
-    private static func makeStore(accountID: AccountID) -> (ClientStore, StoreHealth, () -> Void) {
+    private static func makeStore(accountID: AccountID) -> (ClientStore, StoreHealth, () -> Void, GRDBStore?) {
         let log = AppLog(category: "persistence")
         #if DEBUG
         let env = ProcessInfo.processInfo.environment
         if env["MAZIDI_STORE_MODE"] == "ephemeral", let ephemeral = try? GRDBStore.inMemory() {
-            return (ClientStore(ephemeral), .intentionallyEphemeral, { try? ephemeral.close() })
+            return (ClientStore(ephemeral), .intentionallyEphemeral, { try? ephemeral.close() }, ephemeral)
         }
         if let dir = env["MAZIDI_STORE_DIR"] {
             let base = URL(fileURLWithPath: dir, isDirectory: true)
             if let relocated = try? GRDBStore.open(
                 directory: AccountDatabasePath.directory(base: base, accountID: accountID)
             ) {
-                return (ClientStore(relocated), Self.health(of: relocated), { try? relocated.close() })
+                return (ClientStore(relocated), Self.health(of: relocated), { try? relocated.close() }, relocated)
             }
         }
         #endif
@@ -194,14 +238,14 @@ final class ClientEnvironment {
             let store = try GRDBStore.open(
                 directory: AccountDatabasePath.directory(base: base, accountID: accountID)
             )
-            return (ClientStore(store), Self.health(of: store), { try? store.close() })
+            return (ClientStore(store), Self.health(of: store), { try? store.close() }, store)
         } catch {
             // Unrecoverable open failure (the corrupt-file policy already ran and the
             // damaged files are preserved on disk — MIGRATIONS.md). The session layer
             // routes this to the storage-failure surface — never normal signed-in
             // data access (ADR-0008).
             log.error("Durable account store unavailable (\(error)); in-memory fallback")
-            return (ClientStore(InMemorySyncStore()), .ephemeralFallback, {})
+            return (ClientStore(InMemorySyncStore()), .ephemeralFallback, {}, nil)
         }
     }
 

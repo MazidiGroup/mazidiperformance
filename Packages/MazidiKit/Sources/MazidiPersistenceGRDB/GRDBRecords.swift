@@ -323,6 +323,7 @@ struct OutboxOperationRecord: Codable, FetchableRecord, PersistableRecord {
     var status: String
     var attemptCount: Int
     var lastError: String?
+    var nextAttemptAt: Date?
 
     enum CodingKeys: String, CodingKey {
         case id, kind, sequence, payload, status
@@ -331,6 +332,7 @@ struct OutboxOperationRecord: Codable, FetchableRecord, PersistableRecord {
         case enqueuedAt = "enqueued_at"
         case attemptCount = "attempt_count"
         case lastError = "last_error"
+        case nextAttemptAt = "next_attempt_at"
     }
 
     init(operation: SyncOperation) {
@@ -344,6 +346,7 @@ struct OutboxOperationRecord: Codable, FetchableRecord, PersistableRecord {
         status = operation.status.rawValue
         attemptCount = operation.attemptCount
         lastError = operation.lastError
+        nextAttemptAt = operation.nextAttemptAt
     }
 
     func toDomain() throws -> SyncOperation {
@@ -372,7 +375,8 @@ struct OutboxOperationRecord: Codable, FetchableRecord, PersistableRecord {
             enqueuedAt: enqueuedAt,
             status: status,
             attemptCount: attemptCount,
-            lastError: lastError
+            lastError: lastError,
+            nextAttemptAt: nextAttemptAt
         )
     }
 }

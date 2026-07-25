@@ -1,5 +1,6 @@
 import Foundation
 import MazidiFoundations
+import MazidiNetworking
 import MazidiPersistence
 
 /// A durable, replayable mutation record (ADR-0003). Enqueued in the same local transaction
@@ -19,6 +20,8 @@ public struct SyncOperation: Sendable, Codable, Equatable, Identifiable {
         // Assignments (ADR-0009): aggregate = assignment id
         case assignmentCreated
         case assignmentStatusChanged
+        // Coach–Client relationship (ADR-0012 §6): aggregate = relationship id
+        case relationshipUpdated
     }
 
     public enum Status: String, Sendable, Codable {
@@ -45,6 +48,9 @@ public struct SyncOperation: Sendable, Codable, Equatable, Identifiable {
     public private(set) var status: Status
     public private(set) var attemptCount: Int
     public private(set) var lastError: String?
+    /// Earliest time this operation may be retried (backoff scheduling, ADR-0012 §9).
+    /// Nil means "due now". Persisted in `outbox_operation.next_attempt_at`.
+    public private(set) var nextAttemptAt: Date?
 
     public init(
         id: Identifier<SyncOperation> = .init(),
@@ -65,6 +71,22 @@ public struct SyncOperation: Sendable, Codable, Equatable, Identifiable {
         self.status = .pending
         self.attemptCount = 0
         self.lastError = nil
+        self.nextAttemptAt = nil
+    }
+
+    /// The typed entity this operation concerns (ADR-0012 §2) — derived from `kind`, so no
+    /// column parsing is needed to route or build the mutation envelope.
+    public var entityType: SyncEntityType {
+        switch kind {
+        case .workoutSessionStarted, .workoutSessionCompleted, .workoutSessionAbandoned:
+            return .workoutSession
+        case .setRecorded: return .setEntry
+        case .exerciseSwapped: return .exerciseSwap
+        case .auditEventAppended: return .auditEvent
+        case .templateDraftSaved, .templatePublished: return .workoutTemplate
+        case .assignmentCreated, .assignmentStatusChanged: return .workoutAssignment
+        case .relationshipUpdated: return .relationship
+        }
     }
 
     /// Persistence-restoration initializer (ADR-0007): reconstructs an operation in an
@@ -80,7 +102,8 @@ public struct SyncOperation: Sendable, Codable, Equatable, Identifiable {
         enqueuedAt: Date,
         status: Status,
         attemptCount: Int,
-        lastError: String?
+        lastError: String?,
+        nextAttemptAt: Date? = nil
     ) {
         self.id = id
         self.kind = kind
@@ -92,6 +115,7 @@ public struct SyncOperation: Sendable, Codable, Equatable, Identifiable {
         self.status = status
         self.attemptCount = attemptCount
         self.lastError = lastError
+        self.nextAttemptAt = nextAttemptAt
     }
 
     public mutating func markInFlight() {
@@ -111,6 +135,20 @@ public struct SyncOperation: Sendable, Codable, Equatable, Identifiable {
         status = .pending
         lastError = reason
     }
+
+    /// Schedule a backoff retry: pending, same idempotency key, not due until `at`
+    /// (ADR-0012 §9). Deterministic — the delay is computed by the engine from the injected
+    /// clock + injected randomness, never a `sleep`.
+    public mutating func scheduleRetry(reason: String, at nextAttempt: Date) {
+        status = .pending
+        lastError = reason
+        nextAttemptAt = nextAttempt
+    }
+
+    /// True when the operation is pending and due (no scheduled backoff in the future).
+    public func isDue(at now: Date) -> Bool {
+        status == .pending && (nextAttemptAt.map { $0 <= now } ?? true)
+    }
 }
 
 /// The persistence layer stores outbox records generically (`OutboxOperation`); this is
@@ -129,6 +167,9 @@ public typealias InMemorySyncStore = InMemoryStore<SyncOperation>
 
 /// Concrete composition boundary for coach programming persistence (ADR-0009).
 public typealias ProgrammingStore = any ProgrammingRepository<SyncOperation>
+
+/// Concrete composition boundary for Coach–Client relationship persistence (ADR-0012 §6).
+public typealias RelationshipStore = any RelationshipRepository<SyncOperation>
 
 /// Outcome classification for a transport attempt.
 public enum SyncAttemptOutcome: Sendable, Equatable {

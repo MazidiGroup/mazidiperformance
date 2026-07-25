@@ -332,13 +332,13 @@ private func makeService(store: GRDBStore, clock: FixedClock) -> WorkoutSessionS
         let tables = try await store.writer.read { db in
             try String.fetchAll(db, sql: "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'grdb_%' AND name NOT LIKE 'sqlite_%' ORDER BY name")
         }
-        #expect(tables == ["audit_event", "exercise_swap", "outbox_operation", "set_entry",
-                           "template_version", "workout_assignment", "workout_session",
-                           "workout_template"])
+        #expect(tables == ["audit_event", "exercise_swap", "outbox_operation", "relationship",
+                           "remote_record", "set_entry", "sync_cursor", "template_version",
+                           "workout_assignment", "workout_session", "workout_template"])
         let migrated = try await store.writer.read { db in
             try GRDBSchema.migrator().appliedIdentifiers(db)
         }
-        #expect(migrated == ["v1-workout-persistence", "v2-coach-programming"])
+        #expect(migrated == ["v1-workout-persistence", "v2-coach-programming", "v3-backend-sync-metadata"])
     }
 
     @Test func forwardMigrationToATestFixturePreservesData() async throws {
@@ -370,7 +370,8 @@ private func makeService(store: GRDBStore, clock: FixedClock) -> WorkoutSessionS
         let loaded = try #require(try await upgraded.session(id: session.id))
         #expect(loaded.phase == .active)
         let applied = try await upgraded.writer.read { db in try migrator.appliedIdentifiers(db) }
-        #expect(applied == ["v1-workout-persistence", "v2-coach-programming", "v3-test-fixture"])
+        #expect(applied == ["v1-workout-persistence", "v2-coach-programming",
+                            "v3-backend-sync-metadata", "v3-test-fixture"])
     }
 
     // MARK: Recovery signal — the four conditions are typed and distinguishable

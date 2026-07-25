@@ -36,14 +36,18 @@ let package = Package(
         // Auth/session foundation (ADR-0008). Imports CryptoKit (SHA-256 path
         // derivation only) — an accepted Apple-framework exception like ADR-0007's.
         .target(name: "MazidiAuth", dependencies: ["MazidiFoundations"]),
-        .target(name: "MazidiSync", dependencies: ["MazidiDomain", "MazidiPersistence", "MazidiFoundations"]),
+        // Depends on MazidiNetworking for the provider-neutral sync contracts the backend
+        // push/pull engine builds against (ADR-0012). No cycle (networking → domain/auth).
+        .target(name: "MazidiSync", dependencies: ["MazidiDomain", "MazidiPersistence", "MazidiFoundations", "MazidiNetworking"]),
         // Leaf adapter (ADR-0007): the only target that may import GRDB. Depends on
         // MazidiSync to map the concrete SyncOperation — no cycle, contracts unchanged.
         .target(name: "MazidiPersistenceGRDB", dependencies: [
             "MazidiPersistence", "MazidiSync", "MazidiDomain", "MazidiFoundations",
             .product(name: "GRDB", package: "GRDB.swift"),
         ]),
-        .target(name: "MazidiNetworking", dependencies: ["MazidiDomain", "MazidiFoundations"]),
+        // Depends on MazidiAuth for the stable AccountID/RevocationCheck identity types the
+        // sync contracts reference (ADR-0012). MazidiAuth imports Foundation only — no cycle.
+        .target(name: "MazidiNetworking", dependencies: ["MazidiDomain", "MazidiFoundations", "MazidiAuth"]),
         // Exercise catalogue & media manifest models (ADR-0010). Foundation-only.
         .target(name: "MazidiContent", dependencies: ["MazidiFoundations"]),
         // Read-only source-library audit / catalogue generator (ADR-0010).
@@ -57,9 +61,10 @@ let package = Package(
         .testTarget(name: "MazidiSyncTests", dependencies: ["MazidiSync", "MazidiPersistence"]),
         .testTarget(name: "MazidiServicesTests", dependencies: ["MazidiServices"]),
         .testTarget(name: "MazidiPersistenceGRDBTests", dependencies: [
-            "MazidiPersistenceGRDB", "MazidiServices", "MazidiAuth",
+            "MazidiPersistenceGRDB", "MazidiServices", "MazidiAuth", "MazidiSync", "MazidiNetworking",
         ]),
         .testTarget(name: "MazidiAuthTests", dependencies: ["MazidiAuth"]),
         .testTarget(name: "MazidiContentTests", dependencies: ["MazidiContent"]),
+        .testTarget(name: "MazidiNetworkingTests", dependencies: ["MazidiNetworking", "MazidiAuth"]),
     ]
 )

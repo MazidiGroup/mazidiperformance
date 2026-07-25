@@ -180,6 +180,37 @@ additional UI/integration coverage for slice 1.
 - **Acceptance:** with `MEDIA_BASE_URL` configured, media downloads validate + cache +
   present through the existing tiers; retry surfaces on failure; verified end to end.
 
+### L8 — Backend synchronisation ships as contracts + a DEBUG fake (no real backend)
+- **Where:** `MazidiNetworking/SyncContracts.swift`, `MazidiSync` (`BackendPushEngine`,
+  `BackendPullEngine`, `ConflictResolver`, `FakeSyncBackend`), the `v3` sync tables, and the
+  DEBUG `BackendSyncDriver` (ADR-0012, `docs/architecture/SYNC_DESIGN.md`).
+- **Impact / what remains impossible without a real backend (recorded, not fabricated):**
+  real delivery/receipt confirmation; server-enforced relationship authorization (which coach
+  may relate to/assign to which client — advisory locally only); cross-device session
+  supersession (M4 real epoch); server-side revocation and "sign out everywhere"; actual
+  pulled data and authoritative server versions. `SYNC_BASE_URL` is empty, so the real
+  transport is inert; the only implementation is the DEBUG-only `FakeSyncBackend`, compiled
+  out of Release entirely. No provider is chosen (needs its own future ADR).
+- **Why not fixed now:** No backend/provider exists (R-01/R-02, DL-11); fabricating live
+  server behaviour would violate the honesty rule. The full push/pull/idempotency/cursor/
+  conflict/delivery/revocation machinery is built and unit-tested against the deterministic
+  fake so the app is ready to drop in a real transport.
+- **Owning milestone:** the backend-provider milestone (provider ADR + real HTTP client).
+- **Acceptance:** with a configured `SYNC_BASE_URL` and a real transport, mutations upload +
+  acknowledge, changes pull + materialise, delivery/receipt confirm, and revocation is
+  enforced server-side; verified end to end.
+
+### L9 — Migrations are forward-only (no rollback)
+- **Where:** `GRDBSchema.migrator()` (v1/v2/v3), MIGRATIONS.md.
+- **Impact:** A shipped migration cannot be rolled back (forward-only, ADR-0002). `v3` is
+  additive/non-destructive (old rows read unchanged), so this is not a data-loss risk, but a
+  bad future migration cannot be reversed in place — recovery is the account-scoped quarantine
+  path (a damaged/unopenable database is preserved and replaced), never a down-migration.
+- **Why not fixed now:** Forward-only is a deliberate ADR-0002 decision; down-migrations add
+  risk without a clear need.
+- **Owning milestone:** n/a (accepted design constraint).
+- **Acceptance:** n/a — documented limitation; revisit only if a concrete rollback need arises.
+
 ### L4 — Missing UI coverage for the swap and offline→synced journeys
 - **Where:** `UITests/ClientWorkoutUITests.swift` (covers open / record / pause+resume /
   complete / debug-gating; not swap or connectivity transitions).

@@ -224,6 +224,24 @@ public actor SessionCoordinator {
         }
     }
 
+    /// The backend sync transport reported this session **confirmed revoked**
+    /// (`TransportError.revoked` / `RevocationState.revoked`; ADR-0012 §8). Only call this
+    /// for a CONFIRMED revocation — never for `.unknown` (offline can never claim current
+    /// revocation knowledge). Generation-guarded: a delayed response carrying a prior
+    /// session's generation is ignored, so it can never revoke the now-active session. On a
+    /// confirmed match this bumps the generation (invalidating outstanding work so no pending
+    /// mutation uploads afterwards), deletes credentials, and moves to `.revoked` — the app
+    /// then closes the account database on the phase/generation change (existing sign-out
+    /// boundary). No "sign out everywhere" is claimed (that needs real backend support).
+    @discardableResult
+    public func revocationReported(forGeneration reportedGeneration: UInt64) async -> AuthPhase {
+        guard reportedGeneration == generation, let session = phase.session else { return phase }
+        generation &+= 1
+        try? await credentials.delete(for: session.claims.accountID)
+        apply(.revocationDiscovered)
+        return phase
+    }
+
     // MARK: - Sign-out
 
     /// Full sign-out sequence (SECURITY_BOUNDARIES.md): state → provider revocation

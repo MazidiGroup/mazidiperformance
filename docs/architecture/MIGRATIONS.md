@@ -64,3 +64,27 @@ anything derivable from the rows above.
 Transactions: draft saves, publications (template + version + ops), assignment saves, and
 assignment transitions (session + assignment + ops) each commit atomically with their
 outbox operations, extending the ADR-0003 invariant to programming writes.
+
+## v3 — backend synchronisation metadata (2026-07-25, ADR-0012)
+
+**Additive and non-destructive: every existing v1/v2 row is preserved and reads unchanged.**
+New columns are nullable or defaulted; no existing row is rewritten, and no row is ever
+reassigned across accounts (the migration runs per account-scoped database, in place).
+**Rollback limitation:** forward-only migrations are not reversible (ADR-0002, KNOWN_ISSUES
+L9); `v3` is safe because it only adds, and the only recovery from a bad migration is the
+account-scoped quarantine path (the damaged database is preserved and replaced), never a
+down-migration.
+
+| Table / column | Why it exists |
+|---|---|
+| `outbox_operation` +`entity_type`, +`payload_schema_version` (NOT NULL DEFAULT 1), +`expected_server_version`, +`next_attempt_at`, +`correlation_id` | Sync-transport metadata on the durable outbox — typed dead-letter/routing, forward-compatible payload upgrades, optimistic-concurrency target version, backoff scheduling, and trace correlation. None duplicates the opaque `payload` snapshot. Index `idx_outbox_due(status, next_attempt_at)` serves the backoff due-scan. |
+| `sync_cursor` | Durable, account-scoped pull checkpoint: `stream` PK, `cursor_token` (opaque), `last_server_version` (monotonic, never regresses), `schema_version`, `updated_at`. Advanced only in the same transaction that applies its changes (ADR-0012 §4). |
+| `remote_record` | Local↔remote identity map: PK(`entity_type`, `local_id`), `remote_id`, `server_version`, `tombstoned`, `last_synced_at`; partial UNIQUE(`entity_type`, `remote_id`) where `remote_id` is not null. Stores only ids/version/flag — never a copy of the domain row. Enables optimistic concurrency and explicit remote-deletion detection. |
+| `relationship` | First-class Coach–Client relationship: `id` PK, `remote_id`, `coach_account_id`, `client_account_id` (opaque `AccountID`s, never email), `status`, `created_at`, `accepted_at`, `ended_at`, `server_version`, `local_sync_state`. Indexed on `status`, `coach_account_id`, `client_account_id`. |
+| `workout_assignment` +`remote_id`, +`server_version`, +`relationship_id`, +`delivery_state` (NOT NULL DEFAULT 'createdLocally'), +`delivered_at`, +`opened_at` | Delivery/receipt lifecycle **orthogonal** to the execution `status` column ("Queued" ≠ "Delivered" ≠ "Opened", ADR-0012 §7) plus remote binding. Not a copy of `content_json`. Indexed on `delivery_state` and `relationship_id`. |
+
+Old assignment rows read back with `delivery_state = 'createdLocally'`, `server_version = 0`,
+and NULL remote/relationship/timestamp columns; the delivery lifecycle is advanced only by the
+real transport (never the DEBUG relay, never at `queuedForUpload` — the `assignmentDelivered`
+audit fires only on genuine `acceptedByServer`). The engine's push/pull/conflict logic and the
+relationship domain model land in later commit groups.

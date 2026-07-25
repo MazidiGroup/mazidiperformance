@@ -74,6 +74,17 @@ public protocol ProgrammingRepository<Operation>: Sendable {
     ) async throws
 }
 
+/// Coach–Client relationship persistence (ADR-0012 §6). Generic over the outbox operation
+/// like the other repositories, so a relationship write commits with its queued operation in
+/// one transaction (ADR-0003 invariant).
+public protocol RelationshipRepository<Operation>: Sendable {
+    associatedtype Operation: OutboxOperation
+
+    func saveRelationshipAtomically(_ relationship: Relationship, enqueueing operations: [Operation]) async throws
+    func relationship(id: Identifier<Relationship>) async throws -> Relationship?
+    func allRelationships() async throws -> [Relationship]
+}
+
 public protocol AuditEventStore: Sendable {
     func append(_ event: AuditEvent) async throws
     func latestHash() async throws -> String
@@ -95,7 +106,7 @@ public func auditChainHash(of event: AuditEvent) -> String {
 
 // MARK: - In-memory reference implementation
 
-public actor InMemoryStore<Operation: OutboxOperation>: WorkoutSessionRepository, SyncOperationStore, AuditEventStore, ProgrammingRepository {
+public actor InMemoryStore<Operation: OutboxOperation>: WorkoutSessionRepository, SyncOperationStore, AuditEventStore, ProgrammingRepository, RelationshipRepository {
     private var sessions: [Identifier<WorkoutSession>: WorkoutSession] = [:]
     private var operations: [Operation.ID: Operation] = [:]
     private var operationOrder: [Operation.ID] = []
@@ -103,6 +114,7 @@ public actor InMemoryStore<Operation: OutboxOperation>: WorkoutSessionRepository
     private var templates: [Identifier<WorkoutTemplate>: WorkoutTemplate] = [:]
     private var templateVersions: [Identifier<WorkoutTemplateVersion>: WorkoutTemplateVersion] = [:]
     private var assignments: [Identifier<WorkoutAssignment>: WorkoutAssignment] = [:]
+    private var relationships: [Identifier<Relationship>: Relationship] = [:]
 
     /// Test hook: when set, the next `saveAtomically` throws after doing nothing —
     /// simulating a crash/power-loss at the transaction boundary.
@@ -237,6 +249,20 @@ public actor InMemoryStore<Operation: OutboxOperation>: WorkoutSessionRepository
         sessions[session.id] = session
         assignments[assignment.id] = assignment
         for op in newOperations { operations[op.id] = op; operationOrder.append(op.id) }
+    }
+
+    // RelationshipRepository
+
+    public func saveRelationshipAtomically(_ relationship: Relationship, enqueueing newOperations: [Operation]) async throws {
+        try failIfRequested()
+        relationships[relationship.id] = relationship
+        for op in newOperations { operations[op.id] = op; operationOrder.append(op.id) }
+    }
+
+    public func relationship(id: Identifier<Relationship>) async throws -> Relationship? { relationships[id] }
+
+    public func allRelationships() async throws -> [Relationship] {
+        relationships.values.sorted { $0.createdAt < $1.createdAt }
     }
 
     // AuditEventStore
