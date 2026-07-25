@@ -17,6 +17,12 @@ final class CoachProgrammingModel {
     private(set) var relationships: [Relationship] = []
     var transientError: String?
 
+    /// Honest account-level sync status (never claims delivered/synced while items are
+    /// pending). Delivery/receipt of individual assignments stays "Queued — delivery
+    /// confirms with backend" (ADR-0009); this is the outbox-level truth.
+    enum SyncStatus: Equatable { case upToDate, savedLocally(pending: Int), offline(pending: Int) }
+    private(set) var syncStatus: SyncStatus = .upToDate
+
     private let env: CoachEnvironment
     private var store: CoachStore { env.store }
 
@@ -54,9 +60,25 @@ final class CoachProgrammingModel {
                 assignments = try await store.programming.allAssignments()
             }
             #endif
+            await refreshSyncStatus()
         } catch {
             transientError = "Couldn't load your workouts."
         }
+    }
+
+    /// Recompute the honest outbox-level sync status from the durable pending count.
+    func refreshSyncStatus() async {
+        let pending = await env.pendingCount()
+        if pending == 0 { syncStatus = .upToDate }
+        else if env.isOnline { syncStatus = .savedLocally(pending: pending) }
+        else { syncStatus = .offline(pending: pending) }
+    }
+
+    /// After a durable write: drain the outbox through the real push/pull engines and
+    /// refresh the honest status.
+    private func afterWrite() async {
+        await env.drainOutbox()
+        await refreshSyncStatus()
     }
 
     // MARK: - Drafting
@@ -125,6 +147,7 @@ final class CoachProgrammingModel {
             try? await appendAudit(.programmePublished, subject: "templateVersion:\(version.id)")
             await refreshTemplates()
             versionsByTemplate[template.id] = try await store.programming.versions(templateID: template.id)
+            await afterWrite()
             return version
         } catch let error as WorkoutTemplate.PublicationError {
             transientError = Self.publicationMessage(error)
@@ -159,6 +182,7 @@ final class CoachProgrammingModel {
             await DevelopmentAssignmentRelay.deliver(assignment)
             #endif
             assignments = try await store.programming.allAssignments()
+            await afterWrite()
             return assignment
         } catch {
             transientError = "Couldn't assign the workout."
@@ -215,7 +239,7 @@ final class CoachProgrammingModel {
             )
             try await store.relationships.saveRelationshipAtomically(relationship, enqueueing: [op])
             relationships = try await store.relationships.allRelationships()
-            await env.drainOutbox()
+            await afterWrite()
             return true
         } catch {
             transientError = "Couldn't save the relationship."

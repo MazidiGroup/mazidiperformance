@@ -341,29 +341,34 @@ final class ClientWorkoutModel {
         let pendingBefore = await env.pendingOperationCount()
         guard pendingBefore > 0 else { sync = .synced; return }
 
-        let status = (try? await env.syncEngine.syncOnce()) ?? .waitingForConnectivity(pending: pendingBefore)
+        // Drain through the real push/pull engines (DEBUG fake backend); derive the honest
+        // status from the durable pending count + the summary. Inert in Release (nil) —
+        // "saved on this phone" until a backend exists.
+        guard let summary = await env.drainSync() else {
+            sync = .savedLocally(pending: pendingBefore)
+            return
+        }
         let remaining = await env.pendingOperationCount()
-        switch status {
-        case .idle:
-            sync = remaining == 0 ? .synced : .savedLocally(pending: remaining)
-        case let .syncing(r):
-            sync = .syncing(remaining: r)
-        case let .waitingForConnectivity(p):
-            sync = .waitingForConnectivity(pending: max(p, remaining))
-        case let .pausedAuthExpired(p):
-            sync = .pausedAuthExpired(pending: p)
-        case let .attentionNeeded(rejected):
-            sync = .attentionNeeded(rejected: rejected)
+        if remaining == 0 {
+            sync = .synced
+        } else if summary.deadLettered > 0 {
+            sync = .attentionNeeded(rejected: summary.deadLettered)
+        } else if summary.transportFailed || summary.skippedInactive {
+            sync = .waitingForConnectivity(pending: remaining)
+        } else {
+            sync = .savedLocally(pending: remaining)
         }
     }
 
     // MARK: Dev connectivity affordance (fixture only)
 
     var isOnline: Bool {
-        get { env.connectivity.isOnline }
+        get { env.isOnline }
         set {
-            env.connectivity.isOnline = newValue
-            Task { await refreshSync() }
+            Task {
+                await env.setOnline(newValue)
+                await refreshSync()
+            }
         }
     }
 

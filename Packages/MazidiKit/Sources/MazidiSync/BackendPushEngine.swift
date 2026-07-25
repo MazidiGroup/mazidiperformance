@@ -44,6 +44,8 @@ public struct BackendPushSummary: Sendable, Equatable {
     /// True when the drain was skipped because the session was inactive (signed out /
     /// switched / revoked) — proves no pending work uploads after revocation.
     public var skippedInactive = false
+
+    public init() {}
 }
 
 public actor BackendPushEngine {

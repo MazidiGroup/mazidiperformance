@@ -171,6 +171,11 @@ final class SessionModel {
         case .client:
             if clientEnvironment == nil || environmentGeneration != generation {
                 let env = ClientEnvironment(accountID: session.claims.accountID)
+                // Route a confirmed transport revocation to the coordinator (ADR-0012 §8);
+                // the phase stream then tears the environment down and returns to signed-out.
+                env.setRevocationHandler { [weak self] in
+                    Task { await self?.coordinator.revocationReported(forGeneration: generation) }
+                }
                 clientEnvironment = env
                 environmentGeneration = generation
             }
@@ -183,7 +188,11 @@ final class SessionModel {
             }
         case .coach:
             if coachEnvironment == nil || environmentGeneration != generation {
-                coachEnvironment = CoachEnvironment(accountID: session.claims.accountID)
+                let env = CoachEnvironment(accountID: session.claims.accountID)
+                env.setRevocationHandler { [weak self] in
+                    Task { await self?.coordinator.revocationReported(forGeneration: generation) }
+                }
+                coachEnvironment = env
                 environmentGeneration = generation
             }
             if coachEnvironment?.storeHealth == .ephemeralFallback {

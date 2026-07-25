@@ -43,11 +43,14 @@ final class CoachEnvironment {
     let store: CoachStore
     let storeHealth: ClientEnvironment.StoreHealth
 
-    /// Coach-side outbox transport (fixture connectivity toggle, symmetric to the client's
-    /// until a backend exists). Closes finding #3: the coach environment now drains its
-    /// outbox instead of only enqueueing.
-    let connectivity = FixtureSyncTransport()
-    private lazy var syncEngine = SyncEngine(store: store.operations, transport: connectivity)
+    /// Generation guard shared with the sync engines; flipped false on invalidate().
+    private let activeFlag = SyncActiveFlag()
+    /// DEBUG-only driver exercising the real BackendPushEngine + BackendPullEngine against
+    /// the fake backend (nil in Release / on an in-memory fallback store). Replaces the
+    /// interim SyncEngine drain — closes finding #3 with the actual push/pull machinery.
+    #if DEBUG
+    private(set) var syncDriver: BackendSyncDriver?
+    #endif
 
     private let closeStore: () -> Void
     private(set) var isInvalidated = false
@@ -65,34 +68,41 @@ final class CoachEnvironment {
         self.media = library.mediaResolver()
 
         let log = AppLog(category: "persistence")
+        let resolved: (store: CoachStore, health: ClientEnvironment.StoreHealth, close: () -> Void, grdb: GRDBStore?)
         #if DEBUG
-        let env = ProcessInfo.processInfo.environment
-        if env["MAZIDI_STORE_MODE"] == "ephemeral", let ephemeral = try? GRDBStore.inMemory() {
-            self.store = CoachStore(ephemeral)
-            self.storeHealth = .intentionallyEphemeral
-            self.closeStore = { try? ephemeral.close() }
-            return
+        if ProcessInfo.processInfo.environment["MAZIDI_STORE_MODE"] == "ephemeral", let ephemeral = try? GRDBStore.inMemory() {
+            resolved = (CoachStore(ephemeral), .intentionallyEphemeral, { try? ephemeral.close() }, ephemeral)
+        } else {
+            resolved = Self.durableStore(accountID: accountID, log: log)
+        }
+        #else
+        resolved = Self.durableStore(accountID: accountID, log: log)
+        #endif
+        self.store = resolved.store
+        self.storeHealth = resolved.health
+        self.closeStore = resolved.close
+
+        #if DEBUG
+        if let grdb = resolved.grdb {
+            let flag = activeFlag
+            self.syncDriver = BackendSyncDriver(store: grdb, accountID: accountID, clock: clock, isActive: { flag.isActive })
         }
         #endif
+    }
+
+    private static func durableStore(accountID: AccountID, log: AppLog) -> (store: CoachStore, health: ClientEnvironment.StoreHealth, close: () -> Void, grdb: GRDBStore?) {
         do {
             let base = try Self.storeBase()
-            let grdb = try GRDBStore.open(
-                directory: AccountDatabasePath.directory(base: base, accountID: accountID)
-            )
-            self.store = CoachStore(grdb)
+            let grdb = try GRDBStore.open(directory: AccountDatabasePath.directory(base: base, accountID: accountID))
+            let health: ClientEnvironment.StoreHealth
             switch grdb.recovery {
-            case .normal:
-                self.storeHealth = .durable
-            case let .recoveredAfterQuarantine(path, _):
-                self.storeHealth = .recoveredAfterQuarantine(quarantinedPath: path)
+            case .normal: health = .durable
+            case let .recoveredAfterQuarantine(path, _): health = .recoveredAfterQuarantine(quarantinedPath: path)
             }
-            self.closeStore = { try? grdb.close() }
+            return (CoachStore(grdb), health, { try? grdb.close() }, grdb)
         } catch {
             log.error("Durable coach store unavailable (\(error)); in-memory fallback")
-            let fallback = InMemorySyncStore()
-            self.store = CoachStore(fallback)
-            self.storeHealth = .ephemeralFallback
-            self.closeStore = {}
+            return (CoachStore(InMemorySyncStore()), .ephemeralFallback, {}, nil)
         }
     }
 
@@ -113,17 +123,38 @@ final class CoachEnvironment {
     func invalidate() {
         guard !isInvalidated else { return }
         isInvalidated = true
+        activeFlag.deactivate()   // stop the sync engines before closing (generation guard)
         closeStore()
     }
 
-    /// Drain the coach outbox (draft/publish/assignment/relationship operations). Reuses the
-    /// same SyncEngine the client uses; generation-guarded because the whole environment (and
-    /// its store) is torn down on sign-out/switch (`invalidate`), after which the store's
-    /// operation queries throw and the drain no-ops honestly. No backend exists, so the
-    /// fixture transport acknowledges when "online" and leaves ops queued when "offline".
+    /// Drain the coach outbox (draft/publish/assignment/relationship operations) through the
+    /// real push/pull engines (DEBUG fake backend). Generation-guarded via `activeFlag`,
+    /// torn down on sign-out/switch. Inert in Release (no fake) — ops stay queued honestly.
     func drainOutbox() async {
         guard !isInvalidated else { return }
-        _ = try? await syncEngine.syncOnce()
+        #if DEBUG
+        await syncDriver?.drain()
+        #endif
+    }
+
+    /// Route a confirmed transport revocation to the session layer (ADR-0012 §8). DEBUG only.
+    func setRevocationHandler(_ handler: @escaping @Sendable @MainActor () -> Void) {
+        #if DEBUG
+        syncDriver?.onRevocation = handler
+        #endif
+    }
+
+    /// Pending (not-yet-acknowledged) outbox count — the truth behind the honest status.
+    func pendingCount() async -> Int {
+        (try? await store.operations.pendingOperations().count) ?? 0
+    }
+
+    var isOnline: Bool {
+        #if DEBUG
+        syncDriver?.isOnline ?? false
+        #else
+        false
+        #endif
     }
 
     func makeModel() -> CoachProgrammingModel {

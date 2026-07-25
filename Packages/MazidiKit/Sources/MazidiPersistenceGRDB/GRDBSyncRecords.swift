@@ -311,6 +311,15 @@ extension GRDBStore: BackendSyncStore, RelationshipRepository {
         }
     }
 
+    /// Clear the backoff schedule for all pending operations (retry-now), e.g. when
+    /// connectivity is restored — so a reconnect drains immediately instead of waiting out
+    /// the exponential backoff. Does not change status; only `next_attempt_at`.
+    public func clearPendingRetrySchedule() async throws {
+        try await writer.write { db in
+            try db.execute(sql: "UPDATE outbox_operation SET next_attempt_at = NULL WHERE status = 'pending'")
+        }
+    }
+
     public func loadSyncCursor(stream: String) async throws -> SyncCursorState? {
         try await syncCursor(stream: stream).map {
             SyncCursorState(token: $0.cursorToken, lastServerVersion: $0.lastServerVersion, schemaVersion: $0.schemaVersion)
