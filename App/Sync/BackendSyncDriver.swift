@@ -62,7 +62,6 @@ final class BackendSyncDriver {
             syncStore: store, transport: backend, clock: clock,
             isActive: isActive, audit: store, actorID: accountID.stableActorUUID
         )
-        Task { await backend.setAutoAck(true) }
     }
 
     func setOnline(_ value: Bool) async {
@@ -74,6 +73,8 @@ final class BackendSyncDriver {
     /// Drain once: push the outbox, then pull changes. Routes a confirmed revocation.
     @discardableResult
     func drain() async -> BackendPushSummary {
+        // Deterministically ensure the dev backend auto-acknowledges (no init race).
+        await backend.setAutoAck(true)
         let summary = (try? await push.pushOnce(context: context)) ?? BackendPushSummary()
         _ = try? await pull.pullOnce(context: context)
         if summary.revoked { onRevocation?() }
