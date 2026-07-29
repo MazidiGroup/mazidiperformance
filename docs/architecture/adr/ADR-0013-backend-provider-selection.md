@@ -91,12 +91,32 @@ evaluation is `docs/architecture/backend-provider-evaluation.md`.
 Managed Postgres + GoTrue authentication + Row Level Security + (data only) Storage, on the
 **Pro** plan with a Small compute add-on (~$40/month, verified 2026-07-29), with:
 
-- **all sync semantics implemented as our own Postgres functions** (transactional at-most-once
-  idempotency via a unique key + `INSERT … ON CONFLICT … RETURNING` the canonical result; a
-  sequence-backed monotonic `server_version`; a cursored change feed over that version),
-  exposed over **plain HTTPS** via PostgREST RPC and reached from `URLSession`;
-- **RLS as defence in depth** for per-account isolation (D-3) and the coach↔client relationship
-  join (D-1/D-4) — the relationship table already exists in the `v3` schema;
+- **all sync semantics implemented as our own Postgres functions**, exposed over **plain HTTPS**
+  via PostgREST **RPC** and reached from `URLSession`:
+  - transactional at-most-once idempotency where the **first apply stores the outcome** (assigned
+    `server_version` and result class) in the idempotency table and a **replay detects the
+    conflict and `SELECT`s the stored canonical result**, returning `duplicateApplied(storedVersion)`
+    (`MazidiNetworking/SyncContracts.swift:177`). A PostgREST upsert
+    (`Prefer: resolution=merge-duplicates`) is **not** an acceptable implementation — it re-applies
+    the retry's payload on replay, which is last-write-wins on the idempotency row; and
+    `ON CONFLICT DO NOTHING … RETURNING` returns no row on conflict, so the one-statement form is
+    not implementable. **No sync write may be routed through a PostgREST table upsert.**
+  - a **per-account/stream serialized** monotonic `server_version`. A bare Postgres sequence is
+    monotonic *as issued*, not *as committed*: sequences are non-transactional, so version 103 can
+    commit **after** a pull has already observed 105 and advanced its cursor past it, and the
+    client's `serverVersion > lastServerVersion` filter then skips 103 **permanently** — silent
+    data loss, which ADR-0003 forbids. Version assignment must therefore be serialized per
+    account/stream (a per-stream counter row updated under row lock inside the applying
+    transaction, or an advisory lock held for that transaction) so that **assignment order equals
+    commit order**. A concurrent-commit test is required.
+  - a cursored change feed over that version;
+- **RLS on the sync tables treated as a primary control, not defence in depth**, for per-account
+  isolation (D-3) and the coach↔client relationship join (D-1/D-4) — the relationship table already
+  exists in the `v3` schema. Any table still reachable through PostgREST at `/rest/v1/<table>` is
+  enforced *by RLS alone*, so calling it "defence in depth" understates it. The chosen posture is
+  to **revoke `authenticated` grants on all sync tables** (or keep them out of the exposed schema)
+  so that **RPC is the only sync surface**; where any direct path is ever retained, its RLS must be
+  reviewed at primary-control rigor;
 - **no `supabase-swift` dependency anywhere**, so ADR-0001, ADR-0012 §1 and requirements
   H-2/H-3/H-4 hold unchanged;
 - every Supabase feature that would compete with `MazidiSync` — Realtime, the client-side offline
@@ -181,7 +201,11 @@ with London Edge Storage). Neither is decided here.
   authorization, delivery acknowledgement and revocation become a maintained artifact with its
   own migrations, review and test story. Writing a complete push/pull engine in plpgsql is
   ergonomically awkward; that is an accepted cost of avoiding a separate compute tier, and is the
-  first thing to revisit if it bites.
+  first thing to revisit if it bites. **The security review's conclusion is that this — not the
+  vendor — is the binding risk in this path**, and both factual errors it found in the original
+  draft (idempotency-on-upsert, sequence monotonicity) were plpgsql-implementation errors rather
+  than provider limitations. **BC-11** makes the escape hatch a named tripwire rather than a
+  sentiment.
 - **We take on a revocation store we own** (finding above), which is the only way A-3/A-4 can be
   satisfied by anyone.
 - **Recurring cost begins** — roughly $40/month at pilot scale, plus ~$5/month for media, before
@@ -251,11 +275,16 @@ and move DL-11 to a decision.
 
 **Phase 1 — server contract, still no client change.** Implement the server side of
 `SyncContracts.swift` against a staging project: the idempotency table with its unique key and
-stored canonical result (B-1/B-2), partial batch ack (B-3), typed rejection (B-4), the
-monotonic version sequence (B-5), the change feed with tombstones and pagination (C-1…C-6),
-rate limiting with retry-after (B-6), and the revocation store (A-3/A-4). Verify it against the
-**same expectations `FakeSyncBackend` already encodes** — the fake is the executable spec.
+stored canonical result (B-1/B-2), partial batch ack (B-3), typed rejection (B-4),
+**per-account serialized** monotonic version assignment (B-5), the change feed with tombstones and
+pagination (C-1…C-6), rate limiting with retry-after (B-6), and the revocation store (A-3/A-4).
+Verify it against the **same expectations `FakeSyncBackend` already encodes** — the fake is the
+executable spec. Binding conditions **BC-1…BC-11** below apply from this phase onward.
 `SYNC_BASE_URL` stays empty; the app is untouched.
+
+Three tests are gating for this phase and are named here so they cannot be quietly dropped: the
+**concurrent-commit** version test (BC-6), the **mixed-batch partial-ack** conformance test
+(BC-7), and the **cursor-replay-under-another-JWT** test (BC-9).
 
 **Phase 2 — real transport behind the existing seam.** Add a `URLSessionSyncTransport` in the
 **app target** implementing `SyncBackendTransport` — plain HTTPS/JSON, no SDK, no internal retry
@@ -269,13 +298,23 @@ the app target: sign-in, refresh with rotation (single-use refresh tokens, 10-se
 window), restore, sign-out, and `checkRevocation`. Concretely, `checkRevocation` resolves against
 our own revocation store — for the primary recommendation that means checking whether the token's
 `session_id` still exists in `auth.sessions`, since the provider offers **no revocation-status
-endpoint** — returning `.unknown` when that check cannot be made, and **never** inferring
-revocation. Set the access-token expiry short (the documented 5-minute floor) to bound the window
+endpoint**. The mapping is explicit and must be implemented exactly this way:
+
+- the query runs and **returns no session row → `revoked`**;
+- the query **fails or times out → `.unknown`**.
+
+It must **never** be implemented as "any non-row result = unknown" (which would silently downgrade
+a genuine revocation), nor as "any non-row result = revoked" (which would sign users out on a
+transient database error, violating ADR-0008's rule that `.unknown` is never inferred as revoked).
+The same per-request session-existence check is embedded in **every sync RPC**, not only in
+`checkRevocation`. Set the access-token expiry short (the documented 5-minute floor) to bound the window
 in which an already-issued token still validates; use **asymmetric signing keys with the JWKS
 endpoint** so validation needs no network call, and never the legacy HS256 shared secret. Role
-claims are issued server-side via the custom-claims hook and stored in provider-controlled
-metadata that a user cannot write; the client keeps routing only from
-`SessionClaims.routableRole`. Adopt the **new API-key format from day one** — the legacy JWT-based
+claims are issued server-side via the **Custom Access Token Hook** and live in **`app_metadata`
+only** — `user_metadata` is self-writable through the update-user endpoint and must **never**
+carry role (BC-4). Relationship `status = 'active'` is **checked at query time and never cached in
+a claim**; the client keeps routing only from `SessionClaims.routableRole`. Adopt the **new
+API-key format from day one** — the legacy JWT-based
 keys are documented as deprecated by the end of 2026, and the replacement keys must be sent in the
 `apikey` header, not as `Authorization: Bearer`. `UnavailableAuthProvider` remains the Release
 fallback until this is signed off. **"Sign out everywhere" is only claimed once global
@@ -285,7 +324,10 @@ stays (A-10), because an access token issued before revocation still verifies un
 **Phase 4 — relationship authorization (the milestone's real prize).** Move the `relationship`
 lifecycle from advisory-local to server-enforced: RLS policies plus function-level checks so a
 coach may only write assignments for clients they have an **active** relationship with, and no
-account can read another's state. Denials return `PermanentRejection.forbidden` /
+account can read another's state. The account is derived from **`auth.uid()`** throughout, never
+from the request body (BC-1); every `SECURITY DEFINER` function performs its own explicit
+relationship check and owned tables carry `FORCE ROW LEVEL SECURITY` (BC-2); cursor tokens are
+never capabilities (BC-9). Denials return `PermanentRejection.forbidden` /
 `.relationshipEnded`, which the client already dead-letters visibly. Then wire real delivery
 states — `acceptedByServer` / `availableToClient` from the server, `openedByClient` as a distinct
 client receipt — and only then may coach-side copy move off "Queued — delivery confirms with
@@ -301,6 +343,33 @@ at the same time since downloads finally exist.
 **Throughout:** `SYNC_BASE_URL` and `MEDIA_BASE_URL` stay empty in the shipped `Config/*.xcconfig`
 until the phase that legitimately needs them, and **no host, tenant id, key, bucket name or
 signed URL is ever committed** (ARCHITECTURE.md §9, CLAUDE.md "Never commit").
+
+## Binding conditions on the integration milestone
+
+A security review of this ADR (2026-07-29) independently concurred with the recommendation —
+Supabase, London, used narrowly — but found two factual overstatements in the original draft (the
+`merge-duplicates` idempotency claim and the sequence-monotonicity claim), both corrected above.
+The reviewer's framing is worth recording verbatim in substance: **the binding risk in the
+Supabase path is not the vendor but the plpgsql-only server** — and that is precisely where both
+corrected flaws lived. Nothing about Postgres, London or the narrow-usage posture caused them;
+hand-writing transactional sync semantics in plpgsql did.
+
+The following conditions are **binding** on Phases 1–5. They are not aspirations; a phase is not
+done while one is open.
+
+| ID | Condition |
+|---|---|
+| **BC-1** | **Account derives from `auth.uid()` everywhere.** The client-supplied `MutationEnvelope.accountContext` / `PushMutationBatch.accountContext` (`SyncContracts.swift:101,146`) is **verified and rejected on mismatch**, never trusted. `PullChangesResponse.accountContext` (`:248-249`) echoes the **JWT-derived** value, never the request-supplied one. |
+| **BC-2** | **`SECURITY DEFINER` is not a bypass.** Every `SECURITY DEFINER` function performs its own explicit `auth.uid()`-derived relationship check, and owned tables carry **`FORCE ROW LEVEL SECURITY`** — without it RLS does not apply to the definer/owner. |
+| **BC-3** | **RPC is the only sync surface.** `authenticated` grants are revoked on all sync tables (or the tables are kept out of the exposed schema). The service/secret key exists **only in migration and ops tooling** — never in the app, never in any `.xcconfig`, never in client-reachable config. |
+| **BC-4** | **Role claims live in `app_metadata`**, issued by the Custom Access Token Hook only. `user_metadata` is self-writable via the update-user endpoint and must never carry role. Relationship `status = 'active'` is checked **at query time**, never cached in a claim — this document makes exactly that criticism of Firebase custom claims, and it applies with equal force to our own design. |
+| **BC-5** | **Idempotency uniqueness is `(account_id, idempotency_key)`** with `account_id` derived from `auth.uid()`. A global unique constraint on the client-minted UUID alone would let a replay lookup return **another account's** canonical result, or let a hostile client poison a key before its legitimate owner uses it. |
+| **BC-6** | **Per-account serialized `server_version` assignment** so assignment order equals commit order (see the Recommendation section), plus a **concurrent-commit test** proving no version can commit behind an already-observed cursor. |
+| **BC-7** | **Partial acks require per-mutation subtransactions.** A single function transaction that raises on mutation *k* rolls back 1…*k*−1 — that is all-or-nothing and violates the partial-ack contract (`SyncContracts.swift:184-187`). Each mutation runs in its own `BEGIN … EXCEPTION` savepoint block per loop iteration. A **mixed-batch conformance test** (applied + duplicate + rejected + retryable in one batch) is required. |
+| **BC-8** | **Revocation mapping is explicit** — absent session row → `revoked`; query failure/timeout → `.unknown`. The per-request session-existence check is embedded in **every sync RPC**, not only in `checkRevocation`; otherwise a revoked token retains a server-side write window that a malicious client can exploit for the remainder of its `exp`. |
+| **BC-9** | **A cursor token is never a capability.** The pull function filters strictly by the authenticated subject's relationship graph, so replaying Account A's `nextCursorToken` under Account B's JWT yields only B-visible rows. This is tested explicitly, not assumed. |
+| **BC-10** | **Identifiers never travel in URLs.** Sync RPCs use **POST bodies only** — never PostgREST GET filters carrying identifiers, because request logs capture URLs (this is what satisfies the no-personal-data-in-URLs rule). **Exports** are served through the same grant-checking edge as media, **never presigned URLs** — otherwise the "revocable" claim weakens for exports specifically. |
+| **BC-11** | **Named tripwire.** If the Phase 1 plpgsql implementation cannot pass the `FakeSyncBackend`-derived conformance tests for **partial acks** and **cursor monotonicity** within that phase, **escalate to a thin compute tier** — Edge Function orchestration, or a small Swift service importing `SyncContracts` directly (ADR-0001 keeps `MazidiKit` Linux-buildable) — **rather than weakening the contract**. The contract does not move. |
 
 ## Documentation follow-up (not a code change)
 

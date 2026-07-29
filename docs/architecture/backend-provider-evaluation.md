@@ -118,11 +118,30 @@ REST-only usage is fully supported: PostgREST at
 `Authorization: Bearer <jwt>` headers
 ([supabase.com/docs/guides/api](https://supabase.com/docs/guides/api), 2026-07-29).
 **No `supabase-swift` dependency is required**, so H-2/H-3/H-4 hold and `MazidiKit` stays
-Foundation-only. Being stock PostgREST, it supports `Prefer: resolution=merge-duplicates` with
-`?on_conflict=<unique_col>` and `Prefer: return=representation`
+Foundation-only.
+
+**Correction (security review, 2026-07-29): PostgREST's upsert does *not* satisfy B-1/B-2.**
+An earlier draft of this document claimed that stock PostgREST's
+`Prefer: resolution=merge-duplicates` with `?on_conflict=<unique_col>`
 ([docs.postgrest.org](https://docs.postgrest.org/en/stable/references/api/tables_views.html),
-2026-07-29) — which maps almost exactly onto B-1/B-2: a unique index on the idempotency key, an
-upsert, and the canonical stored row returned on replay.
+2026-07-29) "maps almost exactly onto" the idempotency contract. It does not:
+
+- `merge-duplicates` is an **UPSERT**. On key replay it **UPDATES** the existing row with the
+  retry's payload — it re-applies the mutation, which is last-write-wins on the idempotency row.
+  ADR-0012 requires the opposite: a replay must return the **untouched stored canonical result**.
+- The alternative one-statement formulation is not implementable either. `ON CONFLICT DO NOTHING
+  … RETURNING` **returns no row on conflict**, so the replay path has nothing to return.
+
+The correct pattern is two-step, inside one transaction, in a Postgres function:
+
+1. **First apply** — insert the idempotency row and store the outcome (the assigned
+   `server_version` and the result class) alongside the applied mutation.
+2. **Replay** — the insert conflicts; the function then **`SELECT`s the stored canonical result**
+   and returns `duplicateApplied(storedVersion)`
+   (`MazidiNetworking/SyncContracts.swift:177`). Nothing is re-applied and nothing is overwritten.
+
+**Prohibition:** no sync write may be routed through a PostgREST table upsert. Sync writes go
+through RPC functions only.
 
 **Caveat on the REST surface.** The Auth REST reference is published under *"Self-Hosting → Auth
 Server"* rather than as a first-class platform API, and the individual endpoint pages are thin
@@ -188,10 +207,16 @@ CDN-cached ([supabase.com/docs/guides/storage/serving/downloads](https://supabas
 **and** poster-first CDN-cached (E-5), Supabase Storage fails E-4 and is questionable on E-5.
 **Conclusion: use Supabase for data + auth, and decide the media origin separately.**
 
-**Fit note.** The sync endpoints would be plpgsql functions (transactional at-most-once
-idempotency via a unique index + `INSERT … ON CONFLICT … RETURNING` is a natural fit) or Deno
-Edge Functions. Writing a complete push/pull engine in plpgsql is ergonomically awkward and is a
-genuine cost of this option; it is not a correctness problem.
+**Fit note.** The sync endpoints would be plpgsql functions — a unique index on
+`(account_id, idempotency_key)` plus a **stored canonical result read back on conflict**, per the
+correction above — or Deno Edge Functions. Writing a complete push/pull engine in plpgsql is
+ergonomically awkward and is a genuine cost of this option. An earlier draft added "it is not a
+correctness problem"; the security review disagrees, and so does this document now. **The binding
+risk in the Supabase path is not the vendor but the plpgsql-only server**, and both factual
+errors the review found in the original ADR draft (idempotency-on-upsert, and monotonicity from a
+bare sequence) were plpgsql-implementation errors, not provider limitations. The binding
+conditions and the named escalation tripwire are recorded in
+`adr/ADR-0013-backend-provider-selection.md` §"Binding conditions".
 
 ### A — AWS (eu-west-2)
 
