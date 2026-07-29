@@ -1,6 +1,7 @@
 # Backend provider — hard requirements matrix
 
-**Status:** input to ADR-0013 (Proposed). Derived from the contracts and ADRs already merged on
+**Status:** input to ADR-0013 (**Accepted — for provider selection only**, 2026-07-29). Derived
+from the contracts and ADRs already merged on
 `main`, not from a wish list. Every requirement below cites the code or decision that fixes it.
 
 No provider is chosen in this document. Nothing here is integration work: no SDK, no account, no

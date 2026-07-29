@@ -1,20 +1,44 @@
 # ADR-0013 — Backend provider selection
 
-**Status:** **Proposed** · 2026-07-29
+**Status:** **Accepted — for provider selection only** · 2026-07-29
+(superseded status line: `Proposed`, 2026-07-29)
 
-> **Why this ADR is `Proposed` and not `Accepted`.** ADR-0001 through ADR-0012 are all
-> `Accepted`, because each was an engineering decision this team owns end to end. This one is
-> deliberately different: it commits money, creates vendor lock-in, and determines under whose
-> processor agreement the personal health data of named clients will sit. The deciding input —
-> the legal/privacy review (R-05, DL-01) and the cost approval — is **not an engineering
-> judgement and has not happened.** The recommendation below is complete and actionable, but it
-> requires the human owner's sign-off before it becomes `Accepted`. Nothing may be integrated
-> against it until then.
+> **Scope of this acceptance.** What is accepted is the **provider choice**: Supabase Pro,
+> London (`eu-west-2`), used narrowly, with AWS `eu-west-2` as the named runner-up. Nothing else
+> is accepted. **Integration is still gated** — see "Phase 0 integration gates" below. This ADR
+> becomes an authorisation to *build* only when all four gates are closed.
 
-**No code changed in the commit that introduces this ADR. No account was created, nothing was
-deployed, no dependency was added, and no cost was incurred.** `SYNC_BASE_URL` and
-`MEDIA_BASE_URL` remain empty (`Config/Base.xcconfig:17,24`) and the real transport remains
-inert.
+### Sign-off record
+
+The human owner supplied the deciding inputs on 2026-07-29. They are recorded here because the
+reasoning below only holds while they hold; if any changes, this ADR must be revisited.
+
+| Input | Owner decision |
+|---|---|
+| **Compliance evidence** (was OQ-1) | **NO.** No client has requested SOC 2 / ISO 27001 evidence and none is expected within 12 months. |
+| **Budget** (was OQ-5) | **Approved up to £50/month**, with **usage alerting required**. Explicitly **not** a hard spend cap — a spend-cap `402` is an outage for paying clients (see "Usage alerting, not a hard cap"). |
+| **Provider** | **Confirmed: Supabase Pro, London (`eu-west-2`), used narrowly.** AWS `eu-west-2` remains the named runner-up with updated switch conditions. |
+| **Article 9** (was OQ-3) | **YES — treat the workout, discomfort and check-in data as special category data.** Lawful basis assumed to be **explicit consent, Art. 9(2)(a)**. Requires granular unbundled consent, a consent-record table, and a functioning withdrawal path. Design as special category, **never** as ordinary personal data. **The owner is confirming this with a solicitor** — the assumption is recorded, not settled. |
+| **Residency** (was OQ-4) | **Not legally required.** UK GDPR contains no localisation mandate. **London chosen as a commercial and simplicity decision** because it is free. Recorded explicitly: region choice does **not** eliminate vendor support access from the US, and the DPA must be confirmed to include the **UK Addendum / IDTA in the document body**. |
+| **New deliverables** | **ICO registration** (data protection fee), a **DPIA**, and a **data-flow map covering any AI/model API calls that touch client health data**. |
+
+### Phase 0 integration gates
+
+The provider is chosen. **No integration work begins until all four of these are done:**
+
+1. **DPA executed** with the **UK Addendum verified in the document body** (not merely referenced
+   or assumed) — OQ-2 / OQ-2b remain open.
+2. **DPIA completed** — mandatory in practice now that Art. 9 applies.
+3. **ICO registration** completed and the data protection fee paid.
+4. **Solicitor confirmation** of the Art. 9(2)(a) basis, including the retention question raised
+   in "Consent and data-protection model" below.
+
+Until then this ADR authorises no adapter, no transport, no account, no key, no configuration.
+
+**No code changed in the commit that introduced this ADR, nor in the commit that accepted it. No
+account was created, nothing was deployed, no dependency was added, and no cost was incurred.**
+`SYNC_BASE_URL` and `MEDIA_BASE_URL` remain empty (`Config/Base.xcconfig:17,24`) and the real
+transport remains inert.
 
 ## Context
 
@@ -67,6 +91,14 @@ evaluation is `docs/architecture/backend-provider-evaluation.md`.
 6. **Honesty is a shipped property.** Whatever is chosen must let the UI keep telling the truth:
    "Queued ≠ Delivered ≠ Opened", `.unknown` ≠ revoked, no "sign out everywhere" without real
    support.
+7. **Reversibility.** Used narrowly, Supabase **is stock Postgres**: the exit is `pg_dump`, and
+   because all sync logic lives in **our own functions against our own schema** rather than in
+   vendor machinery, migrating later is a **hosting change, not a rewrite**. This driver is why
+   the scored gap to AWS is tolerable rather than decisive — a wrong call here is recoverable at
+   the cost of a migration, not at the cost of the product. It is load-bearing: it only stays
+   true while the "used narrowly" posture holds (no Realtime, no vendor offline cache, no
+   auto-generated table CRUD), so every one of those exclusions is a reversibility control, not a
+   style preference.
 
 ### Three findings that reframed the decision
 
@@ -122,34 +154,62 @@ Managed Postgres + GoTrue authentication + Row Level Security + (data only) Stor
 - every Supabase feature that would compete with `MazidiSync` — Realtime, the client-side offline
   cache, auto-generated table CRUD — **simply unused**.
 
-**Why this and not the highest-scoring option.** The weighted matrix ranks **AWS first at 89.4%
-and Supabase second at 86.2%**. That gap comes entirely from data protection and operations —
-AWS's DPA is automatically incorporated into its Service Terms with no signature, its compliance
-artifacts are freely available, it publishes SLAs, and RDS offers 35-day PITR. Those are genuine
-advantages and this ADR does not minimise them. Supabase is recommended anyway because the 3.2
-point gap is **inside the noise of my own weighting**, while the difference in *delivery risk* is
-not: Supabase requires no compute to operate, no IAM estate, no IaC and no alarm plumbing, and it
-leaves the exit door wide open (plain Postgres, `pg_dump`, self-hostable). For a team with no CI
-and a single Mac, that is the difference between a working transport this quarter and an
-infrastructure project.
+**Why this and not the highest-scoring option — as the reasoning now stands.** The weighted
+matrix ranks **AWS first at 89.4% and Supabase second at 86.2%**. That gap comes entirely from
+data protection and operations — AWS's DPA is automatically incorporated into its Service Terms
+with no signature, its compliance artifacts are freely available via AWS Artifact, it publishes
+SLAs, and RDS offers 35-day PITR. Those are genuine advantages and this ADR does not minimise
+them. Two owner inputs then reshape the comparison:
+
+- **The "no" on compliance evidence removes the dimension where AWS scored decisively.** No
+  client has asked for a SOC 2 report or ISO certificate and none is expected within 12 months,
+  so free access to compliance artifacts — the largest single component of AWS's W3 lead — buys
+  nothing today. It would buy a great deal the day a corporate client asks; that is exactly the
+  switch condition recorded below.
+- **The £50/month ceiling independently rules out Supabase Team.** At $599/month, the tier that
+  would unlock report access and an SLA is an order of magnitude outside budget. It is not a
+  live option and is not being weighed as one.
+
+What remains is therefore a narrow cost comparison — **AWS ≈ £19–39/month against Supabase Pro +
+Small compute ≈ £31/month** (the evaluation's own AWS estimate is £5–35/month excluding media
+egress and remains **UNVERIFIED**, U-3; either way the two land in the same band and inside
+budget). Cost does not decide this. **It is decided on architectural fit and delivery risk:**
+Supabase requires no compute to operate, no IAM estate, no IaC and no alarm plumbing, and it
+leaves the exit door wide open (plain Postgres, `pg_dump`, self-hostable — decision driver 7).
+For a team with no CI and a single Mac, that is the difference between a working transport this
+quarter and an infrastructure project.
 
 ### Runner-up: AWS, `eu-west-2`
 
 API Gateway + Lambda + RDS Postgres + Cognito + S3/CloudFront.
 
-**Switch to AWS if any of the following is true after review:**
+**Correcting a premise this ADR previously got wrong.** An earlier draft said Supabase "gates
+SOC 2 / ISO 27001 to Team". That is imprecise and it mattered, because it made a future
+compliance requirement look like an automatic switch to AWS. The accurate statement is:
+**Supabase holds SOC 2 Type II and ISO 27001. What is gated behind Team (~$599/month) is
+*access to the report / certificate* and the *SLA*** — not the certification itself. So a future
+"yes" on compliance evidence is a **cost-and-procurement comparison**, not a disqualification:
+**AWS (~$25–50/month, compliance artifacts free via AWS Artifact) versus Supabase Team
+($599/month)**. AWS would very likely win that comparison on price alone, but it must actually be
+run, against the requirement as stated by the client, at the time it is stated.
 
-1. **Legal or procurement requires a compliance report or a contractual SLA.** Supabase lists
-   "SOC2 & ISO 27001" as a **Team-plan ($599/month)** line item and uptime SLAs as
-   **Enterprise-only**. If either is required, Supabase costs 24× more and *still* has no SLA
-   below Enterprise — at which point AWS wins outright. (Exactly what that gating means is
-   **UNVERIFIED**; see open question OQ-1.)
+**Switch conditions — re-evaluate AWS if any of the following becomes true:**
+
+1. **PRIMARY — a corporate client requires a SOC 2 report or a contractual SLA.** This is the
+   trigger the owner's "no" on compliance evidence is holding at bay, and it is the most likely
+   of these to fire. It does **not** mean "switch to AWS"; it means **re-evaluate AWS against
+   Supabase Team**, on the corrected premise above. Note that Supabase has **no SLA below
+   Enterprise**, so a contractual-SLA requirement specifically is harder for Supabase to meet
+   than a report requirement.
 2. **The DPIA requires an automatically-incorporated processor agreement** with published SCC /
    UK-Addendum coverage rather than a per-customer signed DPA.
-3. **A Supabase Pro customer cannot execute the signed DPA at all** (OQ-2). This would be
-   disqualifying immediately.
+3. **A Supabase Pro customer cannot execute the signed DPA at all** (OQ-2), **or the UK Addendum
+   is not present in the document body** (Phase 0 gate 1). Either is disqualifying immediately.
 4. **Platform risk materialises** — a pricing model change, an acquisition, or a service posture
    that no longer suits a health-data workload.
+5. **Recurring cost breaches the approved £50/month ceiling** and cannot be brought back under
+   it, or PITR stops being an acceptable thing to go without (see "Backups and PITR" under
+   Consequences).
 
 Cognito is additionally attractive on one specific point: enabling token revocation adds
 `jti`/`origin_jti` claims, which is precisely the identifier our own revocation store needs.
@@ -184,13 +244,17 @@ with London Edge Storage). Neither is decided here.
   fabricate it; that remains true.
 - **It does not change any product-safety rule.** Draft-content labelling, per-coach
   per-category consent, deletion ≠ cancellation, "the app never moves money", and the
-  accessibility acceptance criteria are unaffected.
+  accessibility acceptance criteria are unaffected. One caveat now exists and is recorded rather
+  than smoothed over: **OQ-10 identifies a genuine tension** between Art. 9(2)(a) consent
+  withdrawal and the *deletion ≠ cancellation* / *sharing off never deletes past content* rules.
+  This ADR does not resolve it and does not weaken either rule; it routes the question to the
+  solicitor and blocks the affected behaviour until answered.
 - **It does not weaken ADR-0003, ADR-0006, ADR-0008 or ADR-0012.** Every contract stands as
   merged.
 
 ## Consequences
 
-**If accepted:**
+**On integration — i.e. once the four Phase 0 gates close, not on acceptance of this ADR:**
 
 - The `SyncBackendTransport` gains a second implementation — a plain `URLSession` adapter in the
   **app target**, alongside the DEBUG `FakeSyncBackend`, which remains the test path.
@@ -208,18 +272,127 @@ with London Edge Storage). Neither is decided here.
   sentiment.
 - **We take on a revocation store we own** (finding above), which is the only way A-3/A-4 can be
   satisfied by anyone.
-- **Recurring cost begins** — roughly $40/month at pilot scale, plus ~$5/month for media, before
-  VAT and before any PITR add-on (~$100/month per 7 days of retention).
+- **Recurring cost begins** — roughly $40/month (≈£31) at pilot scale, plus ~$5/month for media,
+  before VAT. That sits inside the approved £50/month ceiling with little headroom, which is why
+  usage alerting is a condition of the approval and not a nicety.
 - KNOWN_ISSUES **L8** and **M4** become closable in the milestone after next; **L7** (inert
   remote media tier) closes with the media slice.
-- Backups: Supabase Pro gives a 7-day daily-backup window. **Regardless of provider we must run
-  our own scheduled `pg_dump` to separate storage and actually test-restore it** — UK GDPR
-  Art. 32 makes the ability to restore availability in a timely manner an explicit obligation,
-  and a backup never restored is not a backup.
 
-**If rejected or deferred:** nothing breaks. The app continues to ship contracts + a DEBUG fake
-with honest UI, exactly as ADR-0012 designed. This ADR's cost is the evaluation effort, not a
-commitment.
+**Accepted consequence — daily backups, not point-in-time recovery.** This is named as a
+consequence rather than buried in a cost line because it is a real reduction in recoverability
+and the owner accepted it knowingly.
+
+- Supabase **PITR is a ~$100/month add-on per 7 days of retention** — on its own it more than
+  doubles the bill and puts it outside the approved £50/month ceiling. It is therefore **not
+  purchased**.
+- The posture is consequently **daily backups with a 7-day retention window, not point-in-time
+  recovery**. The practical meaning is a **recovery point objective of up to 24 hours** on the
+  server copy, against **AWS RDS's 35-day PITR, which would have been within budget**. That is a
+  genuine advantage of the runner-up and this ADR does not pretend otherwise.
+- **Structural mitigation — the server is not the sole copy of anything recent.** The app is
+  offline-first by construction (ADR-0002, ADR-0003): every client device holds a durable **GRDB
+  copy of its own recent data**, and the **outbox preserves unsynced mutations locally** until
+  they are acknowledged. A server-side loss of the last few hours is therefore a
+  *reconciliation* problem across devices that still hold the data, not an unconditional data
+  loss. This mitigation is real but **partial** — it does not cover data whose only copy was
+  server-side (server-assigned versions, relationship state changes, anything a device has
+  already pruned), and it degrades for a client who has since deleted the app.
+- **Regardless of provider we must run our own scheduled `pg_dump` to separate storage and
+  actually test-restore it** — UK GDPR Art. 32 makes the ability to restore availability in a
+  timely manner an explicit obligation, and a backup never restored is not a backup. With PITR
+  not purchased, this is the load-bearing control, not a supplement to one.
+- **Revisit trigger:** if the RPO of up to 24 hours ever becomes unacceptable — real client
+  volume, or a near-miss — PITR (or the AWS re-evaluation) returns as a budget question.
+
+**If a Phase 0 gate fails, or integration is deferred:** nothing breaks. The app continues to
+ship contracts + a DEBUG fake with honest UI, exactly as ADR-0012 designed. Selecting a provider
+committed no money and created no account; the cost so far is the evaluation effort, not a
+commitment. A failed gate returns the question to this ADR's switch conditions — most likely to
+the AWS re-evaluation — rather than stalling the product.
+
+## Consent and data-protection model (Phase 0 / cross-cutting)
+
+The owner has decided that the workout, discomfort and check-in data is **special category data
+under UK GDPR Art. 9**, with the lawful basis assumed to be **explicit consent, Art. 9(2)(a)**.
+That decision is a design input, not a paperwork exercise. **Design as special category data;
+never as ordinary personal data.** The solicitor confirmation is Phase 0 gate 4.
+
+**What Art. 9(2)(a) requires of the design:**
+
+- **Granular, unbundled consent per purpose.** Consent to be coached is not consent to analytics,
+  and neither is consent to model inference. A single "I agree" covering several purposes is not
+  valid explicit consent. This extends — it does not replace — the existing **per-coach
+  per-category consent** rule in `CLAUDE.md` ("Privacy") and in
+  `handoff/functional-rules.md`: that rule governs *what a given coach may see*; Art. 9(2)(a)
+  additionally governs *whether we may process the category at all, and for which purpose*. Both
+  must hold simultaneously.
+- **A consent-record table** — the evidential core, since under Art. 7(1) the controller must be
+  able to *demonstrate* consent. Minimum fields:
+
+  | Field | Purpose |
+  |---|---|
+  | `granted_at` (timestamp) | when consent was given |
+  | `notice_version` | which privacy notice / wording was shown — consent is to a specific text, so the text must be versioned and retained |
+  | `purposes` | the specific purposes consented to, granularly — not a boolean |
+  | `withdrawal_state` (+ `withdrawn_at`) | current state and when it changed |
+
+  Consent records are **append-only history, never overwritten in place** — a withdrawal must not
+  erase the evidence that consent previously existed, or we lose the ability to demonstrate the
+  lawfulness of past processing.
+- **A functioning withdrawal path.** Art. 7(3) requires withdrawal to be *as easy as* giving
+  consent. It must be reachable in the app, not by emailing support, and it must actually stop
+  future processing for the withdrawn purpose.
+
+### Open question for the solicitor — with a direct design consequence
+
+**Art. 9(2)(a) consent is withdrawable at will. Two existing product rules assume data survives
+that withdrawal.** `CLAUDE.md` states that **deletion ≠ cancellation** and that **turning sharing
+off stops future sharing but never deletes past content**. If **consent is the sole lawful
+basis**, then withdrawing it removes the grounds for continuing to hold training history — history
+a coach may need to retain for **professional or liability reasons**. These cannot both be
+unconditionally true.
+
+The question to put to the solicitor: **does Art. 9(2)(h)** (health/social care and the
+management of health care systems, subject to the professional-secrecy condition) **or a separate
+retention basis cover historical training records after consent for ongoing processing is
+withdrawn** — and if so, for which records and for how long?
+
+**Consequence, stated plainly: the withdrawal path's behaviour on *existing* data cannot be
+finalised until this is answered.** Building the withdrawal path so that it stops future
+processing is safe and can proceed on the current answer. Deciding whether withdrawal also
+deletes, anonymises, or merely restricts historical records is **blocked**, and must not be
+guessed at in code. Whatever is decided must be reflected in the retention periods still open at
+OQ-8, and in the product copy — a withdrawal control that implies deletion while retaining data
+would be a false statement to the client.
+
+## Usage alerting, not a hard cap
+
+The budget approval is **up to £50/month with alerting**, and it is explicitly **not** a hard
+spend cap. The reason is recorded because it will look like an oversight to someone later:
+**a spend cap converts a billing event into an outage.** When the cap trips, the provider stops
+serving requests — a `402`/`403` at the API boundary — and paying clients lose their coach's
+service at the moment the product is most in demand. The failure mode is the familiar
+free-tier/quota-exhaustion behaviour of hosted platforms (Firebase's Spark plan being the
+commonly cited example; **note that specific precedent is not itself recorded in
+`backend-provider-evaluation.md`, so it is cited here as general platform behaviour rather than
+as a verified finding of ours**). Degrading paying clients' service to protect a £50 budget is
+the wrong trade, and would also strain the app's honesty rules — the UI has no truthful way to
+explain a billing-induced sync failure to a client, and "sync is unavailable" while the coach is
+mid-programme is exactly the kind of silent-failure surface ADR-0003 exists to prevent.
+
+Required instead, configured before any real data flows:
+
+| Threshold | Action |
+|---|---|
+| **60% of the £50/month ceiling** (~£30) | Informational alert to the owner — expected to fire routinely once Pro + compute is running; its job is to confirm alerting works and to make the baseline visible. |
+| **85% of the ceiling** (~£42.50) | Actionable alert — investigate before month end. |
+| **100% of the ceiling** | Alert, **not** a cut-off. Service continues; the overspend is a decision for the owner, not for the platform. |
+| **Any new billable line item appearing** | Alert regardless of amount — this is the one that catches a feature silently enabling a metered service, which is how small bills become large ones. |
+
+Alerting must reach the owner **outside the app** (email/provider notification), since a sync
+outage is precisely when in-app delivery cannot be relied on. Egress and storage are the meters
+most likely to move unexpectedly once the media slice lands; media has its own ~$5/month baseline
+and should be alerted separately so the two budgets do not mask each other.
 
 ## Migration / exit strategy
 
@@ -249,29 +422,66 @@ exit cost among managed candidates.
 
 ## Open questions requiring human and legal sign-off
 
-None of these can be closed by engineering. Each blocks moving this ADR to `Accepted`.
+None of these can be closed by engineering. They no longer block the **provider selection**,
+which is accepted — they block **integration**, via the Phase 0 gates.
 
-| ID | Question | Owner |
+**Four are now closed** by the sign-off record above (OQ-1, OQ-3, OQ-4, OQ-5). They are kept in
+the table with their answers rather than deleted, because the reasoning in this ADR depends on
+those answers and a future reader must be able to see what was assumed.
+
+| ID | Question | Owner | Status |
+|---|---|---|---|
+| OQ-1 | Does the DPIA/procurement position require a SOC 2 or ISO 27001 **report** and a contractual **SLA**? | Legal + owner | **CLOSED — NO.** No client has requested such evidence; none expected within 12 months. Note the corrected premise: **Supabase holds SOC 2 Type II and ISO 27001; Team (~$599/mo) gates *report/certificate access* and the SLA.** A future "yes" therefore triggers an **AWS vs Supabase Team comparison**, not an automatic switch. Reopens on the primary switch condition. |
+| OQ-3 | Is the workout, discomfort and check-in data **special-category health data** under UK GDPR Art. 9? | Legal (R-05) | **CLOSED — YES**, treat as special category. Basis assumed **Art. 9(2)(a) explicit consent**; **DPIA now required**. See "Consent and data-protection model". **Solicitor confirmation outstanding (Phase 0 gate 4)**, including the Art. 9(2)(h) retention question. |
+| OQ-4 | Is UK residency required, preferred, or merely nice to have? | Legal (R-05) | **CLOSED — not legally required.** UK GDPR has no localisation mandate. **London chosen as a commercial and simplicity decision** (it is free). Recorded explicitly: this does **not** eliminate **vendor support access from the US**, and the **UK Addendum / IDTA must be confirmed present in the DPA document body** (Phase 0 gate 1) — region selection is not a transfer mechanism. |
+| OQ-5 | Approve the recurring cost. | Owner | **CLOSED — approved up to £50/month with usage alerting; no hard spend cap.** Consequence: **PITR (~$100/mo) is not purchased** — daily backups with 7-day retention instead. |
+| OQ-2 | Can a Supabase **Pro**-tier customer execute the signed DPA? The DPA (v. 2025-03-14) is strong — EU SCCs plus the **ICO Approved Addendum B.1.0**, UK GDPR/DPA 2018 named, and a clause 7.2 commitment that region-directed data is *"stored and primarily Processed in that region"* — and the DPA page documents **no** plan restriction. But that is inferred from silence. A "no" is disqualifying. Also review clause 7.1's broader default and the word *"primarily"*. **Phase 0 gate 1** additionally requires the **UK Addendum to be verified in the document body**. | Legal + owner | **OPEN — blocking** |
+| OQ-2b | Supabase publishes **no public subprocessor page** (`/legal/subprocessors` returns 404); the list is **Schedule 3 of the DPA PDF** and the objection window is only **5 days**. Decide whether that transparency posture is acceptable and how changes will be monitored. | Legal + owner | **OPEN** — now sharper, since Schedule 3 lists **OpenAI** and the data is Art. 9 (see OQ-6). |
+| OQ-6 | Review subprocessor lists before any data flows. **Fly.io lists Anthropic and OpenAI; Bunny.net lists OpenAI**, and Supabase's own Schedule 3 lists OpenAI. If any is in the final stack, exactly what customer data can reach those subprocessors must be established and answerable in a coach's due-diligence questionnaire. | Legal + owner | **OPEN — escalated.** Now an Art. 9 question, and the input to the **AI/model data-flow map** (Phase 0 deliverable). |
+| OQ-7 | **DL-07 interaction.** A backend does not discharge at-rest encryption on device. Decide SQLCipher vs iOS Data Protection **independently**, and note the account database now holds a coach's whole client roster. | Eng lead + legal | **OPEN — escalated.** Art. 9 data raises the bar for the Art. 32 "appropriate measures" argument on device. |
+| OQ-8 | Retention and deletion periods (DL-01, R-05) must be fixed before the provider holds real data, because **deletion ≠ cancellation** is a product rule the server must enforce. | Legal | **OPEN — now coupled to OQ-10.** Retention periods cannot be fixed before the consent-withdrawal/retention basis is settled. |
+| OQ-9 | Confirm the **UNVERIFIED** items in `backend-provider-evaluation.md` §5 that bear on cost or compliance — at minimum U-2, U-3, U-7. (U-1 is now answered: certification is held; Team gates report access and the SLA.) | Owner | **OPEN** |
+| OQ-10 | **New — for the solicitor, with a direct design consequence.** Art. 9(2)(a) consent is withdrawable at will, but **deletion ≠ cancellation** and **sharing off never deletes past content**. If consent is the sole basis, withdrawal removes the grounds for retaining training history a coach may need for professional/liability reasons. Does **Art. 9(2)(h)** or a separate retention basis cover historical records, for which records and for how long? | Legal (solicitor) | **OPEN — blocking the withdrawal path's behaviour on existing data.** See "Consent and data-protection model". |
+
+## Phased integration plan — for the milestone AFTER the Phase 0 gates close
+
+Nothing below happens in this milestone. Provider selection being accepted does **not** start
+Phase 1; the Phase 0 gates do. Each phase is separately reviewable and each preserves the honesty
+rules.
+
+**Phase 0 — sign-off and data-protection groundwork (no code).** Partially done: OQ-1, OQ-3,
+OQ-4 and OQ-5 are closed and the provider is selected. What remains in Phase 0 is the work that
+**gates integration**. No Phase 1 work starts until every item here is complete.
+
+| # | Deliverable | Why it gates |
 |---|---|---|
-| OQ-1 | Does the DPIA/procurement position require a SOC 2 or ISO 27001 **report** and a contractual **SLA**? Supabase gates the former to Team ($599/mo) and the latter to Enterprise. A "yes" switches the recommendation to AWS. | Legal + owner |
-| OQ-2 | Can a Supabase **Pro**-tier customer execute the signed DPA? The DPA (v. 2025-03-14) is strong — EU SCCs plus the **ICO Approved Addendum B.1.0**, UK GDPR/DPA 2018 named, and a clause 7.2 commitment that region-directed data is *"stored and primarily Processed in that region"* — and the DPA page documents **no** plan restriction. But that is inferred from silence. A "no" is disqualifying. Also review clause 7.1's broader default and the word *"primarily"*. | Legal + owner |
-| OQ-2b | Supabase publishes **no public subprocessor page** (`/legal/subprocessors` returns 404); the list is **Schedule 3 of the DPA PDF** and the objection window is only **5 days**. Decide whether that transparency posture is acceptable and how changes will be monitored. | Legal + owner |
-| OQ-3 | Is the workout, discomfort and check-in data **special-category health data** under UK GDPR Art. 9? If so a DPIA is very likely mandatory. Engineering must not make this call. | Legal (R-05) |
-| OQ-4 | Is UK residency required, preferred, or merely nice to have? UK GDPR contains **no localisation mandate** — transfers are lawful with an IDTA / UK Addendum plus a Transfer Risk Assessment. This changes which candidates are even in scope. | Legal (R-05) |
-| OQ-5 | Approve the recurring cost: ~$40/month pilot, plus ~$5/month media, plus ~$100/month if PITR is required. | Owner |
-| OQ-6 | Review subprocessor lists before any data flows. **Fly.io lists Anthropic and OpenAI; Bunny.net lists OpenAI.** If either is in the final stack, exactly what customer data can reach those subprocessors must be established and answerable in a coach's due-diligence questionnaire. | Legal + owner |
-| OQ-7 | **DL-07 interaction.** A backend does not discharge at-rest encryption on device. Decide SQLCipher vs iOS Data Protection **independently**, and note the account database now holds a coach's whole client roster. | Eng lead + legal |
-| OQ-8 | Retention and deletion periods (DL-01, R-05) must be fixed before the provider holds real data, because **deletion ≠ cancellation** is a product rule the server must enforce. | Legal |
-| OQ-9 | Confirm the **UNVERIFIED** items in `backend-provider-evaluation.md` §5 that bear on cost or compliance — at minimum U-1, U-2, U-3, U-7. | Owner |
+| 0.1 | **DPA executed**, with the **UK Addendum / IDTA verified in the document body** — not inferred, not merely referenced (OQ-2, OQ-2b). | London region selection is a commercial choice, **not** a transfer mechanism, and it does not eliminate **vendor support access from the US**. Without a verified Addendum there is no lawful transfer basis for the support-access path. |
+| 0.2 | **DPIA completed.** | Art. 35 — large-scale processing of special category data. Now that Art. 9 is confirmed, this is required in practice rather than "very likely". It must cover the residency position, the subprocessor list, the backups/PITR posture, and the AI question below. |
+| 0.3 | **ICO registration** completed and the **data protection fee** paid. | A statutory obligation for a UK controller processing personal data; it is not contingent on anything else here and should be done first as it is the cheapest and most easily forgotten item. |
+| 0.4 | **AI / model API data-flow map.** | See below — a live concern, not a precaution. |
+| 0.5 | **Solicitor confirmation of the Art. 9(2)(a) basis**, including OQ-10 (retention after withdrawal). | Phase 0 gate 4. The withdrawal path's behaviour on existing data cannot be built before this. |
+| 0.6 | **Usage alerting configured** at the thresholds above, before any real data or real traffic. | The budget approval was conditional on it. |
+| 0.7 | Record the decision in the risk register: resolve **R-01/R-02** and move **DL-11** to a decision. | Housekeeping, but these have been open since the register was written. |
 
-## Phased integration plan — for the milestone AFTER this ADR is accepted
+**On 0.4 — the AI/model data-flow map is a live concern, not a precaution.** Two facts make it
+so. First, the **product roadmap already includes AI-drafted check-in responses, follow-ups and
+programme drafts** (`CLAUDE.md`, "AI") — all three process client health data by definition, so
+this is not hypothetical future functionality. Second, the evaluation established that
+**Fly.io lists Anthropic and OpenAI as subprocessors, and Bunny.net lists OpenAI**; Supabase's
+own Schedule 3 lists OpenAI as well. The combination means model vendors could end up in the data
+path either deliberately (our own AI features) or incidentally (a subprocessor of a chosen
+vendor).
 
-Nothing below happens in this milestone. Each phase is separately reviewable and each preserves
-the honesty rules.
+The map must therefore answer one question explicitly and in writing: **does Article 9 data ever
+leave the estate for model inference — and if so, which fields, to which processor, under what
+contract, and with which consent purpose?** "We haven't built it yet" is not an answer; the
+decision is required *now* because it constrains the consent wording (a granular purpose cannot
+be added retroactively to consent already collected) and the subprocessor position.
 
-**Phase 0 — sign-off (no code).** Close OQ-1…OQ-9. Move this ADR to `Accepted` with the decision
-recorded, or record the switch to the runner-up and why. Resolve R-01/R-02 in the risk register
-and move DL-11 to a decision.
+**That decision must be recorded in the ROPA and in the DPIA**, not only in this ADR. If the
+answer is "no", it should be recorded as a *constraint on future development* — meaning the AI
+features are designed against de-identified or coach-authored input — rather than as a passive
+observation that will quietly lapse the first time someone wires an inference call.
 
 **Phase 1 — server contract, still no client change.** Implement the server side of
 `SyncContracts.swift` against a staging project: the idempotency table with its unique key and

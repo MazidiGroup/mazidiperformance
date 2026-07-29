@@ -1,7 +1,8 @@
 # Backend provider evaluation
 
 Companion to `backend-provider-requirements.md`. Scores candidate providers against that
-matrix and feeds ADR-0013 (**Proposed**).
+matrix and feeds ADR-0013 (**Accepted — for provider selection only**, 2026-07-29; integration
+remains gated on that ADR's four Phase 0 gates).
 
 **All web facts were checked on 2026-07-29.** Pricing and feature sets move; every claim
 below carries a source URL and anything that could not be confirmed from a primary source is
@@ -174,9 +175,18 @@ Two real weaknesses on this axis. **There is no public subprocessor page** —
 DPA PDF** (AWS, Cloudflare, Google, Fly.io, Upstash, Vercel, Sentry, OpenAI, PandaDoc and others),
 with 30 days' change notice but only a **5-day objection window**. Diffing a PDF is a materially
 worse transparency posture than a maintained page. And the pricing page lists "SOC2 & ISO 27001"
-as a **Team-plan ($599/mo)** line item with **uptime SLAs Enterprise-only** — *the exact meaning
-of that gating (report access versus certification scope) is **UNVERIFIED** and is a procurement
-question, not an engineering one.*
+as a **Team-plan ($599/mo)** line item with **uptime SLAs Enterprise-only**.
+
+**Correction (2026-07-29): what that line item gates.** An earlier draft of this document, and
+ADR-0013 following it, read that pricing row as Supabase "gating SOC 2 / ISO 27001 to Team". That
+is imprecise and it materially misled the decision. **Supabase holds SOC 2 Type II and ISO 27001
+— the certifications are held at the organisation level and are not a function of the plan.**
+What Team gates is **access to the report / certificate** (and the **SLA**, which is in fact
+Enterprise-only). The practical difference is large: the security posture is the same on Pro as
+on Team; what Pro cannot do is *hand a client the evidence* or *offer a contractual uptime
+commitment*. Consequently a future requirement for compliance evidence is a
+**cost-and-procurement comparison — AWS (~$25–50/mo, artifacts free via AWS Artifact) versus
+Supabase Team ($599/mo)** — and **not** an automatic disqualification of Supabase.
 
 **Revocation, precisely.** Supabase has **no revocation-status endpoint**. The documented
 technique is to check whether the token's `session_id` claim still exists in the `auth.sessions`
@@ -465,9 +475,15 @@ points and moves it from "poor fit" to "does not meet F-1".
   region commitment at clause 7.2, with no documented plan gate) makes a W3 score of 4 defensible
   already; add a 7-day backup window supplemented by our own nightly `pg_dump` to a second vendor
   and W6 moves 3→4, closing the gap to about one point. Conversely, if procurement requires a
-  SOC 2 report or a contractual SLA, Supabase costs **$599/mo (Team)** and *still* has no SLA
-  below Enterprise — and AWS wins outright. **The vendor choice therefore hinges on an input
-  engineering does not own.** That is precisely why ADR-0013 is `Proposed`.
+  SOC 2 **report** or a contractual SLA, obtaining it from Supabase means **Team at $599/mo** —
+  and Supabase *still* has no SLA below Enterprise — so **AWS would very likely win that
+  comparison**, though on the corrected premise above it is a comparison to be run, not a
+  foregone conclusion (Supabase holds the certifications; Team gates the evidence). **The vendor
+  choice therefore hinged on an input engineering does not own.** That input has since been
+  supplied: **the owner recorded "no compliance evidence required, none expected within 12
+  months"**, which removes AWS's decisive dimension, and **a £50/month ceiling**, which
+  independently rules Supabase Team out as a live option. ADR-0013 is accordingly now
+  **Accepted for provider selection**, with integration gated on Phase 0.
 - **W6 and W7 at 8 and 5 are the most contestable weights here.** They understate *delivery
   risk* for a small team with no CI (R-09/DL-09) and a single Mac (R-08). That factor is argued
   explicitly in ADR-0013 rather than smuggled into the weights.
@@ -491,7 +507,7 @@ milestone commits money or data.
 
 | # | Unverified item |
 |---|---|
-| U-1 | Whether Supabase's "SOC2 & ISO 27001" Team-plan line item gates **report access** or **certification scope** — and what a DPIA actually requires here |
+| U-1 | ~~Whether Supabase's "SOC2 & ISO 27001" Team-plan line item gates **report access** or **certification scope**~~ — **RESOLVED 2026-07-29: it gates *report/certificate access* and the SLA; Supabase holds SOC 2 Type II and ISO 27001 regardless of plan.** Still open: what the DPIA concludes on this point |
 | U-2 | Whether a Supabase **Pro**-tier customer can execute the signed DPA. The DPA page documents **no** plan restriction, so the answer is probably yes — but it is inferred from silence, not stated |
 | U-2b | Whether Supabase publishes any **stability / versioning / deprecation policy** for the `/auth/v1` REST surface (none found) |
 | U-2c | Supabase Storage's **CDN vendor**, whether Smart CDN is plan-gated, and private-object cache-invalidation semantics |
@@ -527,3 +543,22 @@ plus a Transfer Risk Assessment
 latency** choice rather than a legal obligation — which does not make it less desirable, but does
 mean it must not be used to disqualify an otherwise better option on its own. **This is a legal
 question and the above is not legal advice.**
+
+**Owner decision, 2026-07-29 (closing OQ-4).** Residency is **not legally required**. London
+(`eu-west-2`) is chosen as a **commercial and simplicity** decision — it is free, it reduces
+latency, and it simplifies the DPIA narrative. Two things are recorded explicitly so the choice
+is not later mistaken for a guarantee it does not provide:
+
+1. **Region selection does not eliminate vendor support access from the US.** Support and
+   engineering access paths are governed by the processor agreement, not by where the database
+   sits.
+2. **The DPA must therefore be confirmed to include the UK Addendum / IDTA in the document
+   body** — region selection is not a transfer mechanism. This is Phase 0 gate 1 in ADR-0013.
+
+**Related owner decision (closing OQ-3):** the workout, discomfort and check-in data is to be
+treated as **special category data under UK GDPR Art. 9**, lawful basis assumed **Art. 9(2)(a)
+explicit consent**, subject to solicitor confirmation. That raises the bar throughout this
+document: a **DPIA is now required in practice**, and the subprocessor question at OQ-6 —
+**Fly.io lists Anthropic and OpenAI; Bunny.net lists OpenAI; Supabase's Schedule 3 lists
+OpenAI** — becomes an Art. 9 question rather than a hygiene one. See ADR-0013's "Consent and
+data-protection model" and the Phase 0 **AI/model data-flow map** deliverable.
