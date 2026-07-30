@@ -125,6 +125,10 @@ final class HealthDataConsentUITests: XCTestCase {
         app.buttons["today_resume_workout"].tapWhenReady()
         XCTAssertTrue(app.otherElements["set_entry_row.0"].waitForExistence(timeout: 15),
                       "Withdrawal must not delete an already-recorded set")
+        // The rest started by that set is still running and occupies the entry area; skip it
+        // so the assertion is about the consent gate, not the rest timer.
+        let skipRest = app.buttons["rest_timer_skip_button"]
+        if skipRest.waitForExistence(timeout: 5) { skipRest.tapWhenReady() }
         XCTAssertTrue(app.descendants(matching: .any)[A11yUITestID.consentRequiredNotice].firstMatch.waitForExistence(timeout: 15),
                       "With recording withdrawn, the form should be replaced by an honest notice")
     }
