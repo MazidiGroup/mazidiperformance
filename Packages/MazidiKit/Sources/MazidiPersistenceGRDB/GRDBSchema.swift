@@ -190,6 +190,48 @@ public enum GRDBSchema {
             try db.create(index: "idx_assignment_relationship", on: "workout_assignment", columns: ["relationship_id"])
         }
 
+        // v4 — health-data consent records (ADR-0013 "Consent and data-protection model").
+        // PURELY ADDITIVE: one new table, no change to any v1/v2/v3 table, column or index, so
+        // every existing row is preserved and reads unchanged. Account-scoped like every other
+        // table (the migration runs per account database, in place) and the corruption/
+        // quarantine policy is untouched.
+        //
+        // ONE ROW PER (PURPOSE, GRANT) — no purposes child table. A child table would make a
+        // parent row that carries several purposes under one granted_at and one withdrawal
+        // switch representable, which is exactly the bundled consent Art. 9(2)(a) rejects.
+        // Keeping `purpose` as a typed column on the record makes unbundling structural: each
+        // purpose has its own grant timestamp, its own notice version and its own withdrawal.
+        //
+        // APPEND-ONLY EVIDENCE: rows are INSERTed on grant and never deleted. Withdrawal only
+        // stamps `withdrawn_at`; `purpose`, `granted_at` and `notice_version` are never
+        // rewritten, so the record of past lawful processing survives (Art. 7(1)). A re-grant
+        // inserts a NEW row rather than clearing an old one.
+        migrator.registerMigration("v4-health-data-consent") { db in
+            try db.create(table: "health_data_consent") { t in
+                // Client-generated UUID — also the sync aggregate id, so a grant and its later
+                // withdrawal replay in order against one record.
+                t.column("id", .text).primaryKey()
+                // Exactly one purpose per row (HealthDataConsent.Purpose raw value).
+                t.column("purpose", .text).notNull()
+                // Which privacy-notice wording the decision was given against. Consent is to a
+                // specific text, so the version must be retained with the decision.
+                t.column("granted_at", .datetime).notNull()
+                t.column("notice_version", .text).notNull()
+                // NULL while in force; set once on withdrawal, never cleared.
+                t.column("withdrawn_at", .datetime)
+            }
+            // The gate's hot query — "is a record in force for purpose X?" — reads exactly
+            // this partial index and nothing else.
+            try db.execute(sql: """
+                CREATE INDEX idx_health_consent_in_force
+                ON health_data_consent (purpose) WHERE withdrawn_at IS NULL
+                """)
+            // History reads (the settings surface and the evidential export) scan a purpose in
+            // decision order.
+            try db.create(index: "idx_health_consent_purpose_granted",
+                          on: "health_data_consent", columns: ["purpose", "granted_at"])
+        }
+
         return migrator
     }
 }
