@@ -16,8 +16,13 @@ struct MazidiApp: App {
 }
 
 /// Root composition: a pure function of the session route (ADR-0008). Coach and Client
-/// remain separate shells with separate navigation graphs; role comes only from
-/// validated session claims — never a preference or launch argument.
+/// remain separate shells with separate navigation graphs; role comes only from the
+/// session's claims — never a preference read here, never a launch argument.
+///
+/// In `LOCAL_IDENTITY` builds (Debug + Staging/TestFlight) those claims can be issued by
+/// the local test profile the tester chose (ADR-0014): the choice is made *before* a
+/// session exists, is minted into a role-scoped account, and reaches this view only as
+/// ordinary claims. Release is unchanged — no role is obtainable there at all.
 struct SessionRootView: View {
     @Environment(SessionModel.self) private var session
 
@@ -42,13 +47,26 @@ struct SessionRootView: View {
             )
         case .clientShell:
             if let environment = session.clientEnvironment {
+                #if LOCAL_IDENTITY
+                // Test builds label the local profile honestly and host the role switch
+                // (ADR-0014). Not compiled into Release.
+                LocalProfileShell {
+                    ClientRootView(environment: environment)
+                        .id(ObjectIdentifier(environment)) // fresh navigation per account
+                }
+                #else
                 ClientRootView(environment: environment)
                     .id(ObjectIdentifier(environment)) // fresh navigation per account
+                #endif
             } else {
                 ProgressSurface(title: "Opening your data…")
             }
         case let .coachShell(accountLabel):
+            #if LOCAL_IDENTITY
+            LocalProfileShell { CoachShellView(accountLabel: accountLabel) }
+            #else
             CoachShellView(accountLabel: accountLabel)
+            #endif
         case let .roleError(reason):
             AuthMessageSurface(
                 badge: ("Account issue", "person.crop.circle.badge.questionmark", .warning),

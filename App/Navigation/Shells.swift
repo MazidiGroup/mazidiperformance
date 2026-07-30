@@ -4,12 +4,27 @@ import MazidiAuth
 /// Signed-out surface. Production sign-in arrives with the backend contract (R-01) —
 /// stated honestly, not simulated. In DEBUG builds only, deterministic development
 /// identities (ADR-0008 §6) provide real coordinator sign-ins for development, previews
-/// and UI tests; none of this exists in Release.
+/// and UI tests; in Debug and Staging (the TestFlight configuration) a device-local test
+/// profile can be opened instead (ADR-0014). None of this exists in Release, where the
+/// signed-out surface is the whole app.
 struct SignInView: View {
     @Environment(SessionModel.self) private var session
     let pendingRemoteRevocation: Bool
 
     var body: some View {
+        // Scrolls only when the content no longer fits (AX5, or the extra test-build
+        // controls); at normal sizes the Spacers still centre it exactly as before, so the
+        // signed-out surface is unchanged visually while never clipping.
+        GeometryReader { proxy in
+            ScrollView {
+                content
+                    .frame(minWidth: proxy.size.width, minHeight: proxy.size.height)
+            }
+        }
+        .background(MazidiColor.background)
+    }
+
+    private var content: some View {
         VStack(spacing: MazidiMetric.stackSpacing) {
             Spacer()
             Text("Mazidi Performance")
@@ -29,6 +44,12 @@ struct SignInView: View {
                 )
                 .accessibilityIdentifier("pending_remote_revocation_badge")
             }
+
+            #if LOCAL_IDENTITY
+            // Test builds (Debug + Staging/TestFlight) offer a device-local test profile
+            // so the app can be opened without a backend (ADR-0014). Never in Release.
+            LocalProfileChooser()
+            #endif
 
             #if DEBUG
             VStack(spacing: MazidiMetric.tightSpacing) {
@@ -55,8 +76,7 @@ struct SignInView: View {
             #endif
             Spacer()
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(MazidiColor.background)
+        .frame(maxWidth: .infinity)
     }
 }
 

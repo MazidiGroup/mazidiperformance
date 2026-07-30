@@ -25,7 +25,7 @@ struct CoachRootView: View {
             .navigationTitle("Workouts")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Sign out") { Task { await session.signOut() } }
+                    Button(sessionExitLabel) { Task { await session.signOut() } }
                         .accessibilityIdentifier("coach_sign_out")
                 }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -64,6 +64,16 @@ struct CoachRootView: View {
             if model == nil { model = environment.makeModel() }
             await model?.load()
         }
+    }
+
+    /// A local test profile was never signed in, so it cannot be "signed out" (ADR-0014
+    /// honesty rule). Real sessions keep the ordinary wording.
+    private var sessionExitLabel: String {
+        #if LOCAL_IDENTITY
+        return session.localProfileRole == nil ? "Sign out" : "Leave profile"
+        #else
+        return "Sign out"
+        #endif
     }
 
     @ViewBuilder private func workoutList(_ model: CoachProgrammingModel) -> some View {

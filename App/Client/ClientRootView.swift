@@ -32,7 +32,7 @@ struct ClientRootView: View {
                                 .accessibilityIdentifier(A11yID.privacyOpenButton)
                         }
                         ToolbarItem(placement: .topBarTrailing) {
-                            Button("Sign out") { Task { await session.signOut() } }
+                            Button(sessionExitLabel) { Task { await session.signOut() } }
                                 .accessibilityIdentifier("client_sign_out")
                         }
                     }
@@ -56,6 +56,16 @@ struct ClientRootView: View {
         .onChange(of: model?.consentRequired) { _, purpose in
             if purpose != nil, path.last != .healthConsent { showConsent() }
         }
+    }
+
+    /// A local test profile was never signed in, so it cannot be "signed out" (ADR-0014
+    /// honesty rule). Real sessions keep the ordinary wording.
+    private var sessionExitLabel: String {
+        #if LOCAL_IDENTITY
+        return session.localProfileRole == nil ? "Sign out" : "Leave profile"
+        #else
+        return "Sign out"
+        #endif
     }
 
     private func showConsent() {
