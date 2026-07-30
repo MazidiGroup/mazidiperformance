@@ -82,6 +82,9 @@ final class ClientAuthUITests: XCTestCase {
 
         // Client 1 records a set and exits mid-workout.
         signIn(app, via: "dev_continue_client", expecting: "today_start_workout")
+        // Recording is gated on health-data consent (ADR-0013). Granting it here also proves
+        // the consent ledger is account-scoped: client 2 below is asked afresh.
+        app.grantHealthDataConsent()
         app.buttons["today_start_workout"].tapWhenReady()
         app.buttons["overview_begin_button"].tapWhenReady()
         app.buttons["set_entry_log_button"].tapWhenReady()

@@ -109,6 +109,9 @@ final class CoachProgrammingUITests: XCTestCase {
 
         // Client: the assignment appears on Today and starts through the normal flow.
         signIn(app, via: "dev_continue_client", expecting: "today_assigned_badge")
+        // Recording is gated on health-data consent (ADR-0013) — granted through the real
+        // consent screen, since the app has no bypass.
+        app.grantHealthDataConsent()
         app.buttons["today_start_workout"].tapWhenReady()
         XCTAssertTrue(app.staticTexts["Slice Lower"].firstMatch.waitForExistence(timeout: 10),
                       "The overview should show the coach's workout title")
