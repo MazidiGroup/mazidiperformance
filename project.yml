@@ -21,7 +21,15 @@ settings:
     SWIFT_VERSION: "6.0"
     ENABLE_USER_SCRIPT_SANDBOXING: YES
     CODE_SIGN_STYLE: Automatic
-    # DEVELOPMENT_TEAM intentionally unset — no signing assets are committed (working rules)
+    # Apple Developer team for automatic signing. This is an account identifier, not a
+    # secret — it appears in every built binary. No certificates, profiles or keys are
+    # committed; Xcode fetches those per-developer.
+    DEVELOPMENT_TEAM: JWAX6S948T
+    # Version (CFBundleShortVersionString) and build (CFBundleVersion).
+    # Owner set "1.0.01"; recorded here as 1.0.1 because a leading zero is not a
+    # canonical period-separated integer and risks App Store Connect validation.
+    MARKETING_VERSION: "1.0.1"
+    CURRENT_PROJECT_VERSION: "1"
 targets:
   MazidiPerformance:
     type: application
@@ -30,6 +38,11 @@ targets:
       Debug: Config/Debug.xcconfig
       Staging: Config/Staging.xcconfig
       Release: Config/Release.xcconfig
+    settings:
+      base:
+        # App icon lives in App/Resources/Assets.xcassets (single 1024×1024 source;
+        # Xcode derives every other size). Required for App Store submission.
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     sources:
       - App
       # Canonical exercise catalogue + delivery manifest (ADR-0010), bundled read-only
@@ -52,6 +65,11 @@ targets:
       properties:
         UILaunchScreen: {}
         CFBundleDisplayName: Mazidi Performance
+        # Bound to the build settings above so the version is declared in one place.
+        # Without these, XcodeGen writes its own defaults (1.0 / 1) and silently
+        # ignores MARKETING_VERSION / CURRENT_PROJECT_VERSION.
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         # Exercise-media origin (ADR-0010 §6 / ADR-0011 §6), sourced from the active
         # configuration's .xcconfig (MEDIA_BASE_URL). Empty until a CDN exists (R-02);
         # empty means the remote media tier is disabled. No secret is stored here.
