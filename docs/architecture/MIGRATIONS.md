@@ -88,3 +88,63 @@ and NULL remote/relationship/timestamp columns; the delivery lifecycle is advanc
 real transport (never the DEBUG relay, never at `queuedForUpload` — the `assignmentDelivered`
 audit fires only on genuine `acceptedByServer`). The engine's push/pull/conflict logic and the
 relationship domain model land in later commit groups.
+
+## v4 — health-data consent records (2026-07-30, ADR-0013)
+
+**Purely additive: one new table. No v1/v2/v3 table, column or index is altered or dropped**,
+so every existing row is preserved and reads unchanged, and no row is rewritten. The migration
+runs per account-scoped database, in place; consent recorded for one account is structurally
+invisible to another (the other account's data lives in a database this session cannot open).
+Corruption/quarantine behaviour is untouched — a fresh replacement database starts with **no**
+consent, so the gate is closed and the client is asked again rather than inheriting a consent
+that cannot be evidenced. The same forward-only rollback limitation as v3 applies (ADR-0002,
+KNOWN_ISSUES L9); v4 is safe because it only adds.
+
+Background: ADR-0013 records the owner's decision to treat workout, discomfort and check-in
+data as UK GDPR Art. 9 special category data with **explicit consent (Art. 9(2)(a))** as the
+assumed lawful basis, requiring granular unbundled consent, a consent-record table and a
+working withdrawal path. Solicitor confirmation is Phase 0 gate 4 and is still outstanding.
+
+| Table | Why it exists |
+|---|---|
+| `health_data_consent` | One row per **(purpose, grant)** — the evidential unit. `id` (TEXT UUID PK, client-generated; also the sync aggregate id, so a grant and its later withdrawal replay in order against one record), `purpose` (NOT NULL — one `HealthDataConsent.Purpose` raw value per row), `granted_at` (NOT NULL — when consent was given), `notice_version` (NOT NULL — which privacy-notice wording it was given against; consent is consent to a specific text, so the version must be retained with the decision), `withdrawn_at` (nullable — NULL while in force, set once on withdrawal and never cleared). |
+
+**Why a typed `purpose` column and not a purposes child table.** A child table would make a
+parent row carrying several purposes under one `granted_at` and one withdrawal switch
+*representable* — exactly the bundled consent Art. 9(2)(a) rejects. Keeping the purpose on the
+record makes unbundling structural: each purpose has its own grant timestamp, its own notice
+version and its own withdrawal, and any subset of purposes is expressible.
+
+Indexes:
+
+| Index | Query it serves |
+|---|---|
+| `idx_health_consent_in_force` — partial, `(purpose) WHERE withdrawn_at IS NULL` | The gate's hot query: "is a record in force for purpose X?", asked before every health write. |
+| `idx_health_consent_purpose_granted` — `(purpose, granted_at)` | History reads in decision order (the privacy surface, and the Art. 7(1) evidential trail). |
+
+**Append-only evidence.** Rows are INSERTed on grant and **never deleted**. Withdrawal is an
+`UPDATE … SET withdrawn_at = ? WHERE id = ? AND withdrawn_at IS NULL` — it names one column, so
+`purpose`, `granted_at` and `notice_version` cannot be rewritten by it; it is conditional on the
+record still being in force, so a repeated withdrawal changes nothing and errors instead of
+quietly moving the timestamp; and it cannot reach `set_entry`, `workout_session` or any other
+recorded data. A re-grant INSERTs a **new** row rather than clearing an old one, so the evidence
+that consent existed for the earlier period survives (Art. 7(1) demonstrability). This is the
+schema-level expression of the CLAUDE.md rule that turning sharing off stops future sharing and
+never deletes past content.
+
+Transactions: a consent decision commits **atomically with its outbox operation and its audit
+event** (`SyncOperation.Kind.healthDataConsentGranted` / `…Withdrawn`, aggregate = the record
+id; `AuditEvent.Kind.healthDataConsentGranted` / `…Withdrawn`, subject
+`healthDataConsent:<id>`, payload = purpose identifier + notice version). Audit carries ids,
+purpose names and a wording version only — never health content. The audit chain hash is
+resolved *inside* the transaction (`PendingAuditEvent`), as ADR-0006 requires.
+
+Not persisted deliberately: the privacy-notice **text** (only its version identifier is stored —
+the wording is app content, versioned in `App/Client/Support/HealthPrivacyNotice.swift`), and any
+derived "is collection permitted" flag (recomputed from the rows by
+`HealthDataConsentPolicy`, so there is one answer and it cannot drift).
+
+**Open and not guessed at:** ADR-0013 OQ-10 leaves the behaviour of withdrawal on *existing*
+data with the solicitor. v4 implements only what is settled — withdrawal stops future
+collection. Nothing in this migration deletes, anonymises or restricts historical records, and
+no code should be added to do so before OQ-10 is answered.

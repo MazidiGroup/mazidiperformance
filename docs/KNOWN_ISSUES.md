@@ -200,9 +200,68 @@ additional UI/integration coverage for slice 1.
   acknowledge, changes pull + materialise, delivery/receipt confirm, and revocation is
   enforced server-side; verified end to end.
 
+### L10 — Health-data privacy-notice wording is DRAFT, pending legal review
+- **Where:** `App/Client/Support/HealthPrivacyNotice.swift`
+  (`version = "draft-2026-07-30"`, `isLegallyApproved = false`), shown on
+  `HealthDataConsentView`.
+- **Impact:** The consent flow is fully built and the decision, its purposes and the notice
+  version it was given against are recorded durably. **The notice wording itself is
+  plain-language product copy, not a lawyer-approved privacy notice.** The app labels it
+  "DRAFT WORDING · PENDING REVIEW" wherever it is shown, and the label is a product rule, not
+  a flag — it cannot be switched off. Consents recorded against the draft version are
+  identifiable as such, because the version is stored on every record.
+- **Why not fixed now:** Writing binding legal text is not an engineering decision.
+  ADR-0013 makes solicitor confirmation of the Art. 9(2)(a) basis Phase 0 gate 4, and the
+  notice wording belongs with that review.
+- **Owning milestone:** ADR-0013 Phase 0 (legal), before any real health data is collected
+  from a real client.
+- **Acceptance:** approved wording replaces the draft, `version` is bumped to the approved
+  identifier, `isLegallyApproved` becomes true, and the product decides (see L11) whether
+  clients holding draft-version consent must be re-asked.
+
+### L11 — Two consent questions are open with legal and are deliberately not coded
+- **Where:** the consent model (`MazidiDomain/HealthDataConsent.swift`), the withdrawal path
+  (`HealthDataConsentService.withdraw`), `HealthDataPrivacyView`.
+- **Impact:** Two behaviours a reader might expect are **absent on purpose**:
+  1. **Withdrawal's effect on existing data (ADR-0013 OQ-10).** Withdrawal stops future
+     collection and nothing else. Whether withdrawing Art. 9(2)(a) consent also requires
+     deleting, anonymising or restricting *historical* training records — against
+     "deletion ≠ cancellation" and "sharing off never deletes past content", and against a
+     coach's professional/liability retention need — is with the solicitor. The copy says
+     plainly that nothing is deleted, so the UI is not making a claim the data contradicts.
+  2. **Re-consent on a notice change.** A new `notice_version` does not currently invalidate
+     consent given against an older one; `granting` a purpose already in force is refused
+     rather than silently re-recording it under the new wording. Whether a material wording
+     change requires re-asking (and what counts as material) is a legal/product call.
+- **Why not fixed now:** Both are legal determinations with direct product consequences.
+  Guessing either in code would produce behaviour that is hard to unpick and, in case 1,
+  could destroy data that turns out to be lawfully retainable.
+- **Owning milestone:** ADR-0013 Phase 0 gate 4 (solicitor), then the milestone that
+  implements the answer.
+- **Acceptance:** OQ-10 answered and recorded in ADR-0013; the retention/withdrawal behaviour
+  and the re-consent rule implemented to match, with the client-facing copy updated in the
+  same change.
+
+### L12 — Consent surfaces exist in the Client shell only
+- **Where:** `App/Client/*` (consent + privacy screens, gates); no equivalent in
+  `App/Coach/*`.
+- **Impact:** The Client shell is where health data is entered today (`set_entry` values and
+  RPE), so that is where the gate sits. A coach viewing a client's recorded results is
+  governed by the separate per-coach per-category consent rule (CLAUDE.md / functional-rules
+  turn 13), which is not implemented yet either — so there is currently no coach-side
+  consent surface at all.
+- **Why not fixed now:** No coach-side health-data *entry* exists to gate, and the per-coach
+  per-category sharing controls are their own slice (panels 8e / 13h). Building a coach
+  consent screen with nothing behind it would be scaffolding presented as a control.
+- **Owning milestone:** the privacy/sharing slice (turn 13).
+- **Acceptance:** per-coach per-category sharing controls exist client-side (13h) and are
+  enforced on every coach-side read of client health data; the Art. 9 purpose gate and the
+  per-coach category gate both hold simultaneously.
+
 ### L9 — Migrations are forward-only (no rollback)
-- **Where:** `GRDBSchema.migrator()` (v1/v2/v3), MIGRATIONS.md.
-- **Impact:** A shipped migration cannot be rolled back (forward-only, ADR-0002). `v3` is
+- **Where:** `GRDBSchema.migrator()` (v1/v2/v3/v4), MIGRATIONS.md.
+- **Impact:** A shipped migration cannot be rolled back (forward-only, ADR-0002). `v3` and
+  `v4` are
   additive/non-destructive (old rows read unchanged), so this is not a data-loss risk, but a
   bad future migration cannot be reversed in place — recovery is the account-scoped quarantine
   path (a damaged/unopenable database is preserved and replaced), never a down-migration.
