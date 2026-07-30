@@ -51,6 +51,7 @@ mazidiperformance/
 - **ADR-0003** Offline-first writes: every mutation is a durable `Operation` row written locally *before* any network attempt; server writes are idempotent via client-generated UUID idempotency keys; replay is ordered per-aggregate; conflicts are classified per domain (see §5), never blanket last-write-wins.
 - **ADR-0004** Entitlements as domain rules: a single `EntitlementPolicy` in `MazidiServices` answers "may this actor do X"; views never hand-roll checks. Restricted states block growth actions only — existing-client care is always permitted (handoff functional rule, turn 11).
 - **ADR-0005** Read state ≠ task state: notification items carry independent `readState` and `taskState` (needsAction/acknowledged/snoozed/resolved). Badges count unresolved needs-action only (turn 9).
+- **ADR-0013** Health-data consent as a domain rule: workout/exertion data is treated as Art. 9 special category data, so collection is gated on a granular, unbundled consent record per purpose (`HealthDataConsent`, migration v4). One pure policy answers "may we collect for purpose X"; the service and every UI surface route through it, and it fails closed. Withdrawal stops future collection and never deletes recorded data. Details in `SECURITY_BOUNDARIES.md` and `MIGRATIONS.md` v4.
 - **ADR-0006** Audit events are first-class domain output — a typed, append-only `AuditEvent` written in the same local transaction as the action, synced with the same durability as data, separate from analytics.
 
 ## 4. Identity, roles & security model

@@ -69,6 +69,39 @@ not exist (R-01/R-02, DL-07).
   accounts on one device as the delivery stand-in; it never runs in Release, never
   relays to non-fixture identities, and never fabricates delivery confirmation.
 
+## Health-data consent (ADR-0013)
+
+- The owner's decision is to treat workout, discomfort and check-in data as **UK GDPR Art. 9
+  special category data**, lawful basis assumed **Art. 9(2)(a) explicit consent** (solicitor
+  confirmation outstanding — ADR-0013 Phase 0 gate 4). The app therefore does not record
+  health data before a consent record for the relevant purpose is in force.
+- **Purposes are separate records, never a bundle:** `performanceRecording` (set values and
+  the session record), `perceivedExertionRecording` (RPE), `coachSharing` (the outbox push
+  path). Each purpose is granted, evidenced and withdrawn independently; a single "I agree"
+  covering several purposes is not representable.
+- **The gate is a single pure function** (`HealthDataConsentPolicy`), asked by the service and
+  by every UI surface, and it **fails closed** — if the ledger cannot be read, collection is
+  not permitted. Gates today: `ClientWorkoutModel.begin()`, `ClientWorkoutModel.logSet()`
+  (with the effort rating gated separately), and `ClientEnvironment.drainSync()` for sharing.
+- **Refused writes are held and surfaced, never dropped.** A set the gate refuses is shown to
+  the client, who consents (it is then recorded), logs it without the effort rating, or
+  discards it deliberately.
+- **Withdrawal stops future collection only.** It stamps `withdrawn_at` on the record in
+  force and touches nothing else; there is no API in the domain, the service or the store
+  that could delete recorded data as part of a withdrawal. Consent history is append-only
+  evidence (Art. 7(1)) — a re-grant appends a new record rather than reviving an old one.
+  Whether withdrawal must also affect *historical* records is ADR-0013 OQ-10, open with the
+  solicitor and deliberately not implemented (KNOWN_ISSUES L11).
+- **Consent is account-scoped** like all other data: the ledger lives in the account's own
+  database, so one account's consent can never permit collection for another. A
+  quarantine-replacement database starts with no consent, so the client is asked again rather
+  than inheriting a consent that cannot be evidenced.
+- **Audit and sync carry no health content.** The audit subject is
+  `healthDataConsent:<record id>` with a payload of the purpose identifier and the notice
+  version; the outbox payload is the consent record itself. No measurement, no free text.
+- **The privacy-notice wording is DRAFT** and labelled as such in the UI (KNOWN_ISSUES L10);
+  the version shown is recorded on every decision, so draft-era consents are identifiable.
+
 ## Deferred (recorded, not fabricated)
 - Production auth provider + token endpoints (R-01; provider choice needs its own ADR).
 - Server-side revocation guarantees & "signed out everywhere" (13c honest-limitation copy

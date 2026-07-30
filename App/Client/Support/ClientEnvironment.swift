@@ -41,15 +41,20 @@ struct ClientStore {
     let operations: SyncOutboxStore
     let audit: any AuditEventStore
     let programming: ProgrammingStore
+    /// Health-data consent records (ADR-0013). Same underlying store, so a consent decision
+    /// commits atomically with its outbox operation and audit event.
+    let consent: HealthDataConsentStore
 
     init<S>(_ store: S)
         where S: WorkoutSessionRepository, S: AuditEventStore,
               S: SyncOperationStore, S: ProgrammingRepository,
+              S: HealthDataConsentRepository,
               S.Operation == SyncOperation {
         self.sessions = store
         self.operations = store
         self.audit = store
         self.programming = store
+        self.consent = store
     }
 }
 
@@ -88,6 +93,9 @@ final class ClientEnvironment {
 
     private let store: ClientStore
     let service: WorkoutSessionService
+    /// Health-data consent (ADR-0013). Owns the account's append-only consent ledger and
+    /// answers the gate every health-collection path must ask before recording.
+    let consent: HealthDataConsentService
 
     /// Generation guard shared with the sync engines; flipped false on invalidate().
     private let activeFlag = SyncActiveFlag()
@@ -136,6 +144,11 @@ final class ClientEnvironment {
             // Deterministic per-account actor identity (never the raw account ID).
             actorID: accountID.stableActorUUID
         )
+        self.consent = HealthDataConsentService(
+            store: .init(consent: resolvedStore.consent, operations: resolvedStore.operations),
+            clock: clock,
+            actorID: accountID.stableActorUUID
+        )
         #if DEBUG
         if let grdb {
             let flag = activeFlag
@@ -173,13 +186,37 @@ final class ClientEnvironment {
     /// Push+pull the account's outbox/changes through the real engines (DEBUG fake backend).
     /// Generation-guarded; inert in Release (ops stay queued honestly). Returns the summary
     /// so the honest sync status can be derived; `nil` when there is no driver.
+    ///
+    /// **Consent gate (ADR-0013).** Sharing recorded training information with the coach is a
+    /// separate consented purpose. Without a consent record in force for `coachSharing`, the
+    /// drain does not run: queued operations stay durably queued on this phone, nothing is
+    /// deleted, and nothing new leaves the device. This is the "sharing off stops future
+    /// sharing, never deletes past content" rule at the only place sharing can actually
+    /// happen.
     func drainSync() async -> BackendPushSummary? {
         guard !isInvalidated else { return nil }
+        guard await mayShareWithCoach() else { return nil }
         #if DEBUG
         return await syncDriver?.drain()
         #else
         return nil
         #endif
+    }
+
+    // MARK: - Health-data consent gates (ADR-0013)
+
+    /// The gate every health-collection path asks before recording. Fails **closed**: if the
+    /// ledger cannot be read, collection is not permitted.
+    func mayCollect(_ purpose: HealthDataConsent.Purpose) async -> Bool {
+        ((try? await consent.mayCollect(purpose)) ?? false)
+    }
+
+    func mayShareWithCoach() async -> Bool {
+        await mayCollect(.coachSharing)
+    }
+
+    func consentDecisions() async -> [HealthDataConsent.Purpose: HealthDataCollectionDecision] {
+        ((try? await consent.allDecisions()) ?? [:])
     }
 
     func invalidate() {

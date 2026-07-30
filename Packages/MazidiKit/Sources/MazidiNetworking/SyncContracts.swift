@@ -77,6 +77,9 @@ public enum SyncEntityType: String, Sendable, Codable, CaseIterable {
     case workoutAssignment
     case relationship
     case auditEvent
+    /// Health-data consent records (ADR-0013 consent model). The payload carries ids,
+    /// purpose identifiers, the notice version and timestamps — never health content.
+    case healthDataConsent
 }
 
 public enum MutationOpType: String, Sendable, Codable {

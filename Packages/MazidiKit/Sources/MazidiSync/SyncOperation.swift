@@ -22,6 +22,10 @@ public struct SyncOperation: Sendable, Codable, Equatable, Identifiable {
         case assignmentStatusChanged
         // Coach–Client relationship (ADR-0012 §6): aggregate = relationship id
         case relationshipUpdated
+        // Health-data consent (ADR-0013): aggregate = consent record id, so a grant and its
+        // later withdrawal replay in order against the same record.
+        case healthDataConsentGranted
+        case healthDataConsentWithdrawn
     }
 
     public enum Status: String, Sendable, Codable {
@@ -86,6 +90,7 @@ public struct SyncOperation: Sendable, Codable, Equatable, Identifiable {
         case .templateDraftSaved, .templatePublished: return .workoutTemplate
         case .assignmentCreated, .assignmentStatusChanged: return .workoutAssignment
         case .relationshipUpdated: return .relationship
+        case .healthDataConsentGranted, .healthDataConsentWithdrawn: return .healthDataConsent
         }
     }
 
@@ -170,6 +175,9 @@ public typealias ProgrammingStore = any ProgrammingRepository<SyncOperation>
 
 /// Concrete composition boundary for Coach–Client relationship persistence (ADR-0012 §6).
 public typealias RelationshipStore = any RelationshipRepository<SyncOperation>
+
+/// Concrete composition boundary for health-data consent persistence (ADR-0013).
+public typealias HealthDataConsentStore = any HealthDataConsentRepository<SyncOperation>
 
 /// Outcome classification for a transport attempt.
 public enum SyncAttemptOutcome: Sendable, Equatable {

@@ -85,6 +85,81 @@ public protocol RelationshipRepository<Operation>: Sendable {
     func allRelationships() async throws -> [Relationship]
 }
 
+/// An audit event awaiting its chain hash. ADR-0006 requires the event to be written in the
+/// same transaction as the action, and the hash chain to be unbroken — which means
+/// `previousHash` can only be resolved *inside* that transaction. Callers describe the event;
+/// the store links it.
+public struct PendingAuditEvent: Sendable, Equatable {
+    public let id: Identifier<AuditEvent>
+    public let kind: AuditEvent.Kind
+    public let actorID: UUID
+    public let subjectDescription: String
+    public let occurredAt: Date
+    public let payload: [String: String]
+
+    public init(
+        id: Identifier<AuditEvent> = .init(),
+        kind: AuditEvent.Kind,
+        actorID: UUID,
+        subjectDescription: String,
+        occurredAt: Date,
+        payload: [String: String] = [:]
+    ) {
+        self.id = id
+        self.kind = kind
+        self.actorID = actorID
+        self.subjectDescription = subjectDescription
+        self.occurredAt = occurredAt
+        self.payload = payload
+    }
+
+    /// Link into the chain behind `previousHash`.
+    public func linked(previousHash: String) -> AuditEvent {
+        AuditEvent(
+            id: id, kind: kind, actorID: actorID, subjectDescription: subjectDescription,
+            occurredAt: occurredAt, previousHash: previousHash, payload: payload
+        )
+    }
+}
+
+/// Health-data consent persistence (ADR-0013 consent model). Generic over the outbox
+/// operation like the other repositories, so a consent decision, its queued sync operation and
+/// its audit event commit in ONE transaction (ADR-0003/0006 invariant).
+///
+/// There is deliberately **no delete API**: consent history is append-only evidence
+/// (Art. 7(1)), and withdrawal is a separate, narrower operation that can only stamp
+/// `withdrawnAt` on a record already in force.
+public protocol HealthDataConsentRepository<Operation>: Sendable {
+    associatedtype Operation: OutboxOperation
+
+    /// Append a new grant record. Insert-only: it can never overwrite an existing record.
+    func grantConsentAtomically(
+        _ record: HealthDataConsent,
+        enqueueing operations: [Operation],
+        auditing event: PendingAuditEvent
+    ) async throws
+
+    /// Close the record in force for `purpose` by stamping `withdrawnAt`. Only that column
+    /// changes — `granted_at`, `notice_version` and `purpose` are never rewritten — and the
+    /// write is conditional on the record still being in force, so a double withdrawal cannot
+    /// silently move the timestamp.
+    func withdrawConsentAtomically(
+        recordID: Identifier<HealthDataConsent>,
+        at withdrawnAt: Date,
+        enqueueing operations: [Operation],
+        auditing event: PendingAuditEvent
+    ) async throws
+
+    /// The full append-only history for this account.
+    func consentLedger() async throws -> HealthDataConsentLedger
+}
+
+public enum HealthDataConsentStoreError: Error, Equatable, Sendable {
+    /// No record with that id, or it is already withdrawn — either way there is nothing in
+    /// force to close, and no row is modified.
+    case noRecordInForce(Identifier<HealthDataConsent>)
+}
+
 public protocol AuditEventStore: Sendable {
     func append(_ event: AuditEvent) async throws
     func latestHash() async throws -> String
@@ -106,7 +181,7 @@ public func auditChainHash(of event: AuditEvent) -> String {
 
 // MARK: - In-memory reference implementation
 
-public actor InMemoryStore<Operation: OutboxOperation>: WorkoutSessionRepository, SyncOperationStore, AuditEventStore, ProgrammingRepository, RelationshipRepository {
+public actor InMemoryStore<Operation: OutboxOperation>: WorkoutSessionRepository, SyncOperationStore, AuditEventStore, ProgrammingRepository, RelationshipRepository, HealthDataConsentRepository {
     private var sessions: [Identifier<WorkoutSession>: WorkoutSession] = [:]
     private var operations: [Operation.ID: Operation] = [:]
     private var operationOrder: [Operation.ID] = []
@@ -115,6 +190,8 @@ public actor InMemoryStore<Operation: OutboxOperation>: WorkoutSessionRepository
     private var templateVersions: [Identifier<WorkoutTemplateVersion>: WorkoutTemplateVersion] = [:]
     private var assignments: [Identifier<WorkoutAssignment>: WorkoutAssignment] = [:]
     private var relationships: [Identifier<Relationship>: Relationship] = [:]
+    /// Append-only: entries are added and (on withdrawal) closed in place. Never removed.
+    private var consentRecords: [HealthDataConsent] = []
 
     /// Test hook: when set, the next `saveAtomically` throws after doing nothing —
     /// simulating a crash/power-loss at the transaction boundary.
@@ -263,6 +340,39 @@ public actor InMemoryStore<Operation: OutboxOperation>: WorkoutSessionRepository
 
     public func allRelationships() async throws -> [Relationship] {
         relationships.values.sorted { $0.createdAt < $1.createdAt }
+    }
+
+    // HealthDataConsentRepository
+
+    public func grantConsentAtomically(
+        _ record: HealthDataConsent,
+        enqueueing newOperations: [Operation],
+        auditing event: PendingAuditEvent
+    ) async throws {
+        try failIfRequested()
+        consentRecords.append(record)
+        for op in newOperations { operations[op.id] = op; operationOrder.append(op.id) }
+        auditEvents.append(event.linked(previousHash: try await latestHash()))
+    }
+
+    public func withdrawConsentAtomically(
+        recordID: Identifier<HealthDataConsent>,
+        at withdrawnAt: Date,
+        enqueueing newOperations: [Operation],
+        auditing event: PendingAuditEvent
+    ) async throws {
+        try failIfRequested()
+        guard let index = consentRecords.firstIndex(where: { $0.id == recordID && $0.isInForce }) else {
+            throw HealthDataConsentStoreError.noRecordInForce(recordID)
+        }
+        // Closes the record in place — the array never shrinks, and only `withdrawnAt` moves.
+        try consentRecords[index].withdraw(at: withdrawnAt)
+        for op in newOperations { operations[op.id] = op; operationOrder.append(op.id) }
+        auditEvents.append(event.linked(previousHash: try await latestHash()))
+    }
+
+    public func consentLedger() async throws -> HealthDataConsentLedger {
+        HealthDataConsentLedger(records: consentRecords)
     }
 
     // AuditEventStore

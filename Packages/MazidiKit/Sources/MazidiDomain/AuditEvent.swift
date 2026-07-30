@@ -44,6 +44,11 @@ public struct AuditEvent: Sendable, Codable, Equatable {
         case mutationPermanentlyRejected
         case pullChangesApplied
         case revocationDiscovered
+        // Health-data consent (ADR-0013). Subjects carry the consent record id only; the
+        // payload carries the purpose identifier and notice version — never health content,
+        // never a measurement, never free text the client typed.
+        case healthDataConsentGranted
+        case healthDataConsentWithdrawn
     }
 
     public let id: Identifier<AuditEvent>

@@ -49,7 +49,9 @@ public final class GRDBStore: @unchecked Sendable {
         _atomicWriteHook = hook
     }
 
-    private var atomicWriteHook: (@Sendable () throws -> Void)? {
+    /// Internal (not `private`) so adapter extensions in other files of this target — e.g. the
+    /// v4 consent writes — can honour the same crash-safety test seam.
+    var atomicWriteHook: (@Sendable () throws -> Void)? {
         hookLock.lock(); defer { hookLock.unlock() }
         return _atomicWriteHook
     }

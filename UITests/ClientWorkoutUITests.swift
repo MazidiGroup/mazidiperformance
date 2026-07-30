@@ -14,14 +14,20 @@ final class ClientWorkoutUITests: XCTestCase {
     /// outlives app launches) so journeys always start signed out and never see state
     /// from a previous test or run. The relaunch-restoration test opts into a durable
     /// store and session restoration explicitly.
+    ///
+    /// Health-data consent (ADR-0013) is granted through the real consent screen before any
+    /// journey that records: the app genuinely refuses to record without it, and there is no
+    /// test-only bypass by design. `grantingConsent: false` exercises the ungranted state.
     @MainActor
     private func launchAsClient(
-        environment: [String: String] = ["MAZIDI_STORE_MODE": "ephemeral", "MAZIDI_AUTH_RESET": "1"]
+        environment: [String: String] = ["MAZIDI_STORE_MODE": "ephemeral", "MAZIDI_AUTH_RESET": "1"],
+        grantingConsent: Bool = true
     ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchEnvironment.merge(environment) { _, new in new }
         app.launch()
         selectClientRole(in: app, expecting: "today_start_workout")
+        if grantingConsent { app.grantHealthDataConsent() }
         return app
     }
 
