@@ -45,6 +45,29 @@ enum A11yID {
     static let completeDoneButton = "complete_done_button"
     static let completeSummary = "complete_summary"
 
+    // Health-data consent (ADR-0013)
+    static let consentPurposeToggle = "consent_purpose_toggle"   // + ".<purpose>"
+    static let consentSaveButton = "consent_save_button"
+    static let consentNotNowButton = "consent_not_now_button"
+    static let consentNoticeDisclosure = "consent_notice_disclosure"
+    /// Shown on Today when a health-collection purpose has no consent record in force.
+    static let consentTodayCard = "consent_today_card"
+    static let consentOpenButton = "consent_open_button"
+    /// Shown in place of the set-entry form when recording is not permitted.
+    static let consentRequiredNotice = "consent_required_notice"
+    /// The held (not-recorded) set entry notice — nothing is dropped silently.
+    static let heldEntryNotice = "held_entry_notice"
+    static let heldEntryDiscardButton = "held_entry_discard_button"
+    static let heldEntryLogWithoutEffortButton = "held_entry_log_without_effort_button"
+
+    // Privacy / withdrawal surface
+    static let privacyOpenButton = "privacy_open_button"
+    static let privacyPurposeRow = "privacy_purpose_row"         // + ".<purpose>"
+    static let privacyWithdrawButton = "privacy_withdraw_button" // + ".<purpose>"
+    static let privacyGrantButton = "privacy_grant_button"       // + ".<purpose>"
+    static let privacyWithdrawConfirmButton = "privacy_withdraw_confirm_button"
+    static let privacyHistoryDisclosure = "privacy_history_disclosure"
+
     // Sync status
     static let syncStatusBadge = "sync_status_badge"
     #if DEBUG

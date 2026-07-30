@@ -69,6 +69,12 @@ enum PrescriptionFormat {
 struct SetEntryForm: View {
     let exercise: AssignedExercise
     let setNumber: Int              // 1-based, for the label
+    /// Effort (RPE) is a separately consented purpose (ADR-0013). When consent is not in
+    /// force the control is absent and its state can never be sent — the alternative,
+    /// showing it and dropping the value, would be silent data loss.
+    var allowsEffortRating: Bool = true
+    /// Route to the consent screen from the effort-rating explanation.
+    var onRequestEffortRating: (() -> Void)?
     let onLog: (SetEntry.Value, Double?) -> Void
 
     @State private var reps: Int
@@ -79,9 +85,17 @@ struct SetEntryForm: View {
     @State private var logRPE: Bool
     @FocusState private var focused: Bool
 
-    init(exercise: AssignedExercise, setNumber: Int, onLog: @escaping (SetEntry.Value, Double?) -> Void) {
+    init(
+        exercise: AssignedExercise,
+        setNumber: Int,
+        allowsEffortRating: Bool = true,
+        onRequestEffortRating: (() -> Void)? = nil,
+        onLog: @escaping (SetEntry.Value, Double?) -> Void
+    ) {
         self.exercise = exercise
         self.setNumber = setNumber
+        self.allowsEffortRating = allowsEffortRating
+        self.onRequestEffortRating = onRequestEffortRating
         self.onLog = onLog
         switch exercise.prescription {
         case let .repsAndLoad(_, reps, loadKg):
@@ -106,6 +120,9 @@ struct SetEntryForm: View {
             _loadKg = State(initialValue: 0); _seconds = State(initialValue: 0); _metres = State(initialValue: 0)
             _rpe = State(initialValue: targetRPE); _logRPE = State(initialValue: true)
         }
+        // Consent gate: without it the form can never carry an effort value, not even the
+        // default the `.effort` prescription would otherwise pre-set.
+        if !allowsEffortRating { _logRPE = State(initialValue: false) }
     }
 
     var body: some View {
@@ -116,14 +133,29 @@ struct SetEntryForm: View {
 
             fields
 
-            Toggle(isOn: $logRPE) {
-                Text("Record effort (RPE)")
-                    .font(MazidiFont.callout)
-                    .foregroundStyle(MazidiColor.textSecondary)
+            if allowsEffortRating {
+                Toggle(isOn: $logRPE) {
+                    Text("Record effort (RPE)")
+                        .font(MazidiFont.callout)
+                        .foregroundStyle(MazidiColor.textSecondary)
+                }
+                .tint(MazidiColor.primary)
+                .frame(minHeight: MazidiMetric.minTarget)
+            } else {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Effort ratings are off")
+                        .font(MazidiFont.callout)
+                        .foregroundStyle(MazidiColor.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let onRequestEffortRating {
+                        Button("Turn on effort ratings", action: onRequestEffortRating)
+                            .buttonStyle(.mazidiSecondary)
+                            .accessibilityIdentifier(A11yID.consentOpenButton)
+                    }
+                }
             }
-            .tint(MazidiColor.primary)
 
-            if logRPE {
+            if allowsEffortRating, logRPE {
                 Stepper(value: $rpe, in: 5...10, step: 0.5) {
                     LabeledContent("RPE", value: PrescriptionFormat.trimmed(rpe))
                         .font(MazidiFont.body)
@@ -132,7 +164,7 @@ struct SetEntryForm: View {
             }
 
             Button {
-                onLog(value(), logRPE ? rpe : nil)
+                onLog(value(), (allowsEffortRating && logRPE) ? rpe : nil)
             } label: {
                 Text("Log set \(setNumber)")
             }

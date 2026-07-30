@@ -9,6 +9,7 @@ struct ClientRootView: View {
     let environment: ClientEnvironment
     @Environment(SessionModel.self) private var session
     @State private var model: ClientWorkoutModel?
+    @State private var consentModel: HealthDataConsentModel?
     @State private var path: [ClientRoute] = []
 
     var body: some View {
@@ -22,9 +23,14 @@ struct ClientRootView: View {
                         // held (KNOWN_ISSUES M2) — a failed resume surfaces its error and
                         // stays on Today.
                         onResume: { Task { if await model.resumeWorkout() { path.append(.active) } } },
-                        onViewSummary: { path.append(.complete) }
+                        onViewSummary: { path.append(.complete) },
+                        onReviewConsent: { showConsent() }
                     )
                     .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button("Privacy") { path.append(.privacy) }
+                                .accessibilityIdentifier(A11yID.privacyOpenButton)
+                        }
                         ToolbarItem(placement: .topBarTrailing) {
                             Button("Sign out") { Task { await session.signOut() } }
                                 .accessibilityIdentifier("client_sign_out")
@@ -41,8 +47,19 @@ struct ClientRootView: View {
         .tint(MazidiColor.primary)
         .task {
             if model == nil { model = environment.makeWorkoutModel() }
+            if consentModel == nil { consentModel = HealthDataConsentModel(environment: environment) }
             await model?.loadToday()
         }
+        // A health-collection attempt refused by the consent gate (ADR-0013) routes here,
+        // wherever in the stack it happened. The attempted entry is held by the model, not
+        // dropped, so consenting records it and declining leaves it visible to discard.
+        .onChange(of: model?.consentRequired) { _, purpose in
+            if purpose != nil, path.last != .healthConsent { showConsent() }
+        }
+    }
+
+    private func showConsent() {
+        if path.last != .healthConsent { path.append(.healthConsent) }
     }
 
     @ViewBuilder private func destination(_ route: ClientRoute) -> some View {
@@ -51,7 +68,13 @@ struct ClientRootView: View {
             case .overview:
                 WorkoutOverviewView(
                     model: model,
-                    onBegin: { Task { await model.begin(); path.append(.active) } },
+                    // Starting a session records health data, so it is gated: on refusal the
+                    // consent screen opens instead of the workout (KNOWN_ISSUES M2 pattern).
+                    onBegin: {
+                        Task {
+                            if await model.begin() { path.append(.active) } else { showConsent() }
+                        }
+                    },
                     onOpenExercise: { path.append(.exercise($0.id)) }
                 )
             case let .exercise(id):
@@ -62,13 +85,26 @@ struct ClientRootView: View {
                 ActiveWorkoutView(
                     model: model,
                     onExit: { path.removeAll(); Task { await model.loadToday() } },
-                    onCompleted: { path = [.complete] }
+                    onCompleted: { path = [.complete] },
+                    onReviewConsent: { showConsent() }
                 )
             case .complete:
                 WorkoutCompleteView(model: model, onDone: {
                     path.removeAll()
                     Task { await model.loadToday() }
                 })
+            case .healthConsent:
+                if let consentModel {
+                    HealthDataConsentView(model: consentModel) {
+                        if path.last == .healthConsent { path.removeLast() }
+                        Task { await model.consentDidChange() }
+                    }
+                }
+            case .privacy:
+                if let consentModel {
+                    HealthDataPrivacyView(model: consentModel, onGrant: { showConsent() })
+                        .onDisappear { Task { await model.consentDidChange() } }
+                }
             }
         }
     }
@@ -80,4 +116,8 @@ enum ClientRoute: Hashable {
     case exercise(Identifier<AssignedExercise>)
     case active
     case complete
+    /// Health-data consent (ADR-0013) — reached before any collection, and from Privacy.
+    case healthConsent
+    /// Privacy / withdrawal surface (Art. 7(3): as easy to withdraw as to give).
+    case privacy
 }

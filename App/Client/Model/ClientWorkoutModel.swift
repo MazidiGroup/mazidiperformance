@@ -32,6 +32,20 @@ final class ClientWorkoutModel {
         case waitingForConnectivity(pending: Int)
         case attentionNeeded(rejected: Int)
         case pausedAuthExpired(pending: Int)
+        /// Consent for sharing with the coach is not in force (ADR-0013). Anything recorded
+        /// stays saved on this phone; nothing new is sent. Never presented as "synced".
+        case sharingOff(pending: Int)
+    }
+
+    /// A health-data write the consent gate refused. Held, never dropped: the client is told
+    /// what was not recorded and can either give consent (the entry is then recorded) or
+    /// discard it deliberately.
+    struct HeldSetEntry: Equatable {
+        let exerciseID: Identifier<AssignedExercise>
+        let value: SetEntry.Value
+        let rpe: Double?
+        /// The purpose whose absent consent blocked the write.
+        let blockedBy: HealthDataConsent.Purpose
     }
 
     private(set) var today: TodayState = .loading
@@ -45,6 +59,20 @@ final class ClientWorkoutModel {
     private(set) var restFinishedTick: Int = 0        // bumps when a rest reaches zero (for announcements)
     private(set) var sync: SyncPresentation = .synced
     var transientError: String?                        // surfaced then cleared by the view
+
+    // MARK: Health-data consent gates (ADR-0013)
+
+    /// Set when a health-collection attempt was refused for want of consent. The view routes
+    /// to the consent screen; it is cleared once a decision has been made.
+    var consentRequired: HealthDataConsent.Purpose?
+    /// The refused entry, kept so nothing the client typed is silently lost.
+    private(set) var heldSetEntry: HeldSetEntry?
+    /// Mirrors the consent ledger for the views (recomputed on load and after any decision).
+    private(set) var consentDecisions: [HealthDataConsent.Purpose: HealthDataCollectionDecision] = [:]
+
+    func mayCollect(_ purpose: HealthDataConsent.Purpose) -> Bool {
+        (consentDecisions[purpose] ?? .neverGranted).isPermitted
+    }
 
     // MARK: Dependencies
 
@@ -121,6 +149,7 @@ final class ClientWorkoutModel {
 
     func loadToday() async {
         today = .loading
+        consentDecisions = await env.consentDecisions()
         do {
             // Coach assignments take precedence (ADR-0009); the fixture workout stays
             // as the no-assignment fallback until the backend exists.
@@ -152,7 +181,13 @@ final class ClientWorkoutModel {
         }
     }
 
-    func begin() async {
+    /// Start a workout. Returns false when the consent gate refused — starting a session
+    /// creates a health record (that you trained, and when), so it is gated like any other
+    /// collection (ADR-0013). The caller must not navigate into the workout on false; it
+    /// routes to the consent screen instead.
+    @discardableResult
+    func begin() async -> Bool {
+        guard await requireConsent(.performanceRecording) else { return false }
         do {
             let started: WorkoutSession
             if let assignment = pendingAssignment {
@@ -166,8 +201,10 @@ final class ClientWorkoutModel {
             selectedExerciseID = started.workout.allExercises.first?.id
             persistPosition()
             await afterWrite()
+            return true
         } catch {
             transientError = Self.message(for: error)
+            return false
         }
     }
 
@@ -212,16 +249,85 @@ final class ClientWorkoutModel {
 
     /// Log the next set for an exercise. The set index is derived from what the domain has
     /// already recorded, so the domain's duplicate/ordering guarantees hold.
+    ///
+    /// **Consent gate (ADR-0013).** This is the app's primary health-data entry point, so it
+    /// is checked here — in the model, below every view — rather than only in the UI: the
+    /// performance values need `performanceRecording`, and an effort rating additionally needs
+    /// `perceivedExertionRecording`. A refused entry is **held**, never dropped: the client is
+    /// shown what was not recorded and can consent (it is then recorded) or discard it.
     func logSet(for exercise: AssignedExercise, value: SetEntry.Value, rpe: Double?) async {
+        guard await requireConsent(.performanceRecording, holding: (exercise.id, value, rpe)) else { return }
+        if rpe != nil {
+            guard await requireConsent(.perceivedExertionRecording, holding: (exercise.id, value, rpe)) else { return }
+        }
+        await record(exerciseID: exercise.id, value: value, rpe: rpe, restSeconds: exercise.restSeconds)
+    }
+
+    private func record(
+        exerciseID: Identifier<AssignedExercise>,
+        value: SetEntry.Value,
+        rpe: Double?,
+        restSeconds: Int
+    ) async {
+        guard let exercise = orderedExercises.first(where: { $0.id == exerciseID }) else { return }
         let index = setsRecorded(for: exercise)
         do {
-            _ = try await service.recordSet(exerciseID: exercise.id, setIndex: index, value: value, rpe: rpe)
+            _ = try await service.recordSet(exerciseID: exerciseID, setIndex: index, value: value, rpe: rpe)
+            heldSetEntry = nil
             await syncSessionFromService()
-            startRest(seconds: exercise.restSeconds)
+            startRest(seconds: restSeconds)
             await afterWrite()
         } catch {
             transientError = Self.message(for: error)
         }
+    }
+
+    // MARK: Consent gating
+
+    /// Refresh the ledger mirror and ask the gate. On refusal the purpose is surfaced (so the
+    /// view can route to the consent screen) and the attempted entry, if any, is held.
+    private func requireConsent(
+        _ purpose: HealthDataConsent.Purpose,
+        holding entry: (Identifier<AssignedExercise>, SetEntry.Value, Double?)? = nil
+    ) async -> Bool {
+        if await env.mayCollect(purpose) { return true }
+        consentDecisions = await env.consentDecisions()
+        if let entry {
+            heldSetEntry = HeldSetEntry(exerciseID: entry.0, value: entry.1, rpe: entry.2, blockedBy: purpose)
+        }
+        consentRequired = purpose
+        return false
+    }
+
+    /// Called when the consent screen closes. Re-reads the ledger and, if the held entry is
+    /// now permitted, records it — so a set the client typed before consenting is not lost.
+    func consentDidChange() async {
+        consentDecisions = await env.consentDecisions()
+        consentRequired = nil
+        guard let held = heldSetEntry else { await refreshSync(); return }
+        let needsExertion = held.rpe != nil
+        let permitted = mayCollect(.performanceRecording)
+            && (!needsExertion || mayCollect(.perceivedExertionRecording))
+        guard permitted else { await refreshSync(); return }
+        guard let exercise = orderedExercises.first(where: { $0.id == held.exerciseID }) else {
+            heldSetEntry = nil
+            return
+        }
+        await record(exerciseID: held.exerciseID, value: held.value, rpe: held.rpe, restSeconds: exercise.restSeconds)
+    }
+
+    /// Deliberate discard of a held entry by the client (never automatic).
+    func discardHeldSetEntry() {
+        heldSetEntry = nil
+    }
+
+    /// Record the held entry without its effort rating — the honest way out when the client
+    /// wants the set logged but not the RPE.
+    func recordHeldEntryWithoutEffortRating() async {
+        guard let held = heldSetEntry,
+              let exercise = orderedExercises.first(where: { $0.id == held.exerciseID }),
+              mayCollect(.performanceRecording) else { return }
+        await record(exerciseID: held.exerciseID, value: held.value, rpe: nil, restSeconds: exercise.restSeconds)
     }
 
     func swap(_ exercise: AssignedExercise, to alternative: ExerciseSlug) async {
@@ -339,6 +445,13 @@ final class ClientWorkoutModel {
 
     func refreshSync() async {
         let pendingBefore = await env.pendingOperationCount()
+        // Sharing with the coach is its own consented purpose (ADR-0013). Without it the
+        // status says so plainly — never "Synced", never "Waiting to sync", because neither
+        // is true: the work is saved here and is not going anywhere.
+        guard await env.mayShareWithCoach() else {
+            sync = .sharingOff(pending: pendingBefore)
+            return
+        }
         guard pendingBefore > 0 else { sync = .synced; return }
 
         // Drain through the real push/pull engines (DEBUG fake backend); derive the honest

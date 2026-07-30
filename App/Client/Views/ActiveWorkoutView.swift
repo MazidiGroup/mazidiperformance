@@ -10,6 +10,7 @@ struct ActiveWorkoutView: View {
     @Bindable var model: ClientWorkoutModel
     let onExit: () -> Void
     let onCompleted: () -> Void
+    let onReviewConsent: () -> Void
 
     @State private var showSwap = false
     @State private var showPause = false
@@ -130,6 +131,8 @@ struct ActiveWorkoutView: View {
 
                 recordedSets(exercise)
 
+                heldEntryNotice
+
                 // Rest timer takes over between sets; otherwise the set-entry form (unless done).
                 if model.phase == .paused {
                     pausedBanner
@@ -137,8 +140,19 @@ struct ActiveWorkoutView: View {
                     RestTimerView(model: model)
                 } else if finished {
                     finishedNotice
+                } else if !model.mayCollect(.performanceRecording) {
+                    // Consent gate (ADR-0013): recording is not permitted, so the form that
+                    // collects is not offered at all. The workout itself stays usable.
+                    consentRequiredNotice
                 } else {
-                    SetEntryForm(exercise: exercise, setNumber: recorded + 1) { value, rpe in
+                    SetEntryForm(
+                        exercise: exercise,
+                        setNumber: recorded + 1,
+                        // Effort ratings are a separate consented purpose; the control is
+                        // absent — not silently ignored — when that consent is not in force.
+                        allowsEffortRating: model.mayCollect(.perceivedExertionRecording),
+                        onRequestEffortRating: onReviewConsent
+                    ) { value, rpe in
                         Task { await model.logSet(for: exercise, value: value, rpe: rpe) }
                     }
                     .padding(.top, 4)
@@ -213,6 +227,54 @@ struct ActiveWorkoutView: View {
                 .buttonStyle(.mazidiPrimary)
                 .accessibilityIdentifier(A11yID.activeInlineResume)
             }
+        }
+    }
+
+    /// Recording is not permitted for want of consent. Says so plainly and offers the choice
+    /// — never a dead end, never a silent no-op.
+    private var consentRequiredNotice: some View {
+        MazidiCard {
+            VStack(alignment: .leading, spacing: MazidiMetric.tightSpacing) {
+                StatusBadge(kind: .info, label: "Not recording", systemImage: "hand.raised")
+                Text("You haven't agreed to the app recording your training, so sets aren't being saved. You can still follow the workout.")
+                    .font(MazidiFont.callout)
+                    .foregroundStyle(MazidiColor.text)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Review your choices", action: onReviewConsent)
+                    .buttonStyle(.mazidiPrimary)
+                    .accessibilityIdentifier(A11yID.consentOpenButton)
+            }
+        }
+        .accessibilityIdentifier(A11yID.consentRequiredNotice)
+    }
+
+    /// A set the consent gate refused. It is held, not dropped — the client is told exactly
+    /// what was not recorded and chooses what happens to it.
+    @ViewBuilder private var heldEntryNotice: some View {
+        if let held = model.heldSetEntry {
+            MazidiCard {
+                VStack(alignment: .leading, spacing: MazidiMetric.tightSpacing) {
+                    StatusBadge(kind: .warning, label: "Not saved yet", systemImage: "tray")
+                    Text("This set wasn't saved: \(PrescriptionFormat.summary(held.value, rpe: held.rpe)). It needs your agreement to “\(HealthPrivacyNotice.title(for: held.blockedBy))”.")
+                        .font(MazidiFont.callout)
+                        .foregroundStyle(MazidiColor.text)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button("Review your choices", action: onReviewConsent)
+                        .buttonStyle(.mazidiSecondary)
+                        .accessibilityIdentifier(A11yID.consentOpenButton)
+                    if held.blockedBy == .perceivedExertionRecording {
+                        Button("Save without the effort rating") {
+                            Task { await model.recordHeldEntryWithoutEffortRating() }
+                        }
+                        .buttonStyle(.mazidiSecondary)
+                        .accessibilityIdentifier(A11yID.heldEntryLogWithoutEffortButton)
+                    }
+                    Button("Discard this set") { model.discardHeldSetEntry() }
+                        .buttonStyle(.mazidiSecondary)
+                        .accessibilityIdentifier(A11yID.heldEntryDiscardButton)
+                }
+            }
+            .accessibilityIdentifier(A11yID.heldEntryNotice)
         }
     }
 

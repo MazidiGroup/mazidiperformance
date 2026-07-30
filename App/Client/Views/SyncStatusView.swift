@@ -27,6 +27,12 @@ struct SyncStatusView: View {
             return (.danger, "Sync issue — needs attention (\(rejected))", "exclamationmark.triangle")
         case let .pausedAuthExpired(pending):
             return (.warning, "Sign in to sync · \(pending) waiting", "person.crop.circle.badge.exclamationmark")
+        case let .sharingOff(pending):
+            // Honest: sharing is off by the client's own choice, and what is recorded stays
+            // saved on this phone. Never "Synced" and never "Waiting to sync".
+            return pending > 0
+                ? (.info, "Sharing off · \(pending) saved here", "person.crop.circle.badge.xmark")
+                : (.info, "Sharing with your coach is off", "person.crop.circle.badge.xmark")
         }
     }
 }

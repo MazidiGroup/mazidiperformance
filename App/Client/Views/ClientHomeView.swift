@@ -8,6 +8,7 @@ struct ClientHomeView: View {
     let onViewWorkout: () -> Void
     let onResume: () -> Void
     let onViewSummary: () -> Void
+    let onReviewConsent: () -> Void
     @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
@@ -16,6 +17,8 @@ struct ClientHomeView: View {
                 header
 
                 storeRecoveryNotice
+
+                consentNotice
 
                 switch model.today {
                 case .loading:
@@ -85,6 +88,27 @@ struct ClientHomeView: View {
             }
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("store_recovery_notice")
+        }
+    }
+
+    /// Consent is asked for **before** anything is recorded (ADR-0013), so Today surfaces the
+    /// choice rather than letting the client discover it mid-set. Not a blocker: the workout
+    /// is still viewable, and declining is a stated option on the consent screen itself.
+    @ViewBuilder private var consentNotice: some View {
+        if !model.mayCollect(.performanceRecording) {
+            MazidiCard {
+                VStack(alignment: .leading, spacing: MazidiMetric.tightSpacing) {
+                    StatusBadge(kind: .info, label: "Before you record", systemImage: "hand.raised")
+                    Text("Recording your training is your choice. Have a look at what the app would record and decide — you can pick each item separately.")
+                        .font(MazidiFont.callout)
+                        .foregroundStyle(MazidiColor.text)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button("Review your choices", action: onReviewConsent)
+                        .buttonStyle(.mazidiSecondary)
+                        .accessibilityIdentifier(A11yID.consentOpenButton)
+                }
+            }
+            .accessibilityIdentifier(A11yID.consentTodayCard)
         }
     }
 
