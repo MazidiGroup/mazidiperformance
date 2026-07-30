@@ -200,6 +200,27 @@ additional UI/integration coverage for slice 1.
   acknowledge, changes pull + materialise, delivery/receipt confirm, and revocation is
   enforced server-side; verified end to end.
 
+### L13 — The local device profile is a TestFlight-only stand-in for authentication
+- **Where:** `App/Auth/LocalDeviceIdentity.swift`, `App/Auth/LocalDeviceProfileStore.swift`,
+  `App/Auth/LocalDeviceAuthProvider.swift`, `App/Navigation/LocalProfileViews.swift`,
+  `LOCAL_IDENTITY` in `project.yml` (ADR-0014).
+- **Impact:** In Debug and Staging (the TestFlight configuration) the app opens on a
+  device-local test profile instead of a sign-in. It authenticates nothing and verifies
+  nothing: there is no password, no server, no account recovery, no cross-device identity,
+  and no sync (`SYNC_BASE_URL` is empty; the fake backend is DEBUG-only). Two profiles on one
+  phone cannot be a real coach and their client — coach→client delivery still runs only
+  through the DEBUG `DevelopmentAssignmentRelay`. Anyone with the device has the profile.
+  **Release is unaffected**: it keeps `UnavailableAuthProvider` and its signed-out wall, and
+  `Scripts/check-release-isolation.sh` fails CI if any local-identity symbol reaches a
+  Release binary. This build is explicitly **not** for the App Store.
+- **Why not fixed now:** No authentication provider is chosen (R-01), so there is nothing to
+  sign in to. Without this, a TestFlight build cannot get past "Sign-in failed" and no UX can
+  be validated on real devices; fabricating a fake backend login would be worse.
+- **Owning milestone:** the backend-provider milestone (provider ADR + real sessions).
+- **Acceptance:** a real provider issues sessions; `LOCAL_IDENTITY`, the provider, the profile
+  store and the local-profile UI are **deleted** (not migrated — local profiles carry no
+  identity worth keeping), and the release-isolation check's forbidden list shrinks with them.
+
 ### L10 — Health-data privacy-notice wording is DRAFT, pending legal review
 - **Where:** `App/Client/Support/HealthPrivacyNotice.swift`
   (`version = "draft-2026-07-30"`, `isLegallyApproved = false`), shown on
