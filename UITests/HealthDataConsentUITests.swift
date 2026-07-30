@@ -29,9 +29,10 @@ final class HealthDataConsentUITests: XCTestCase {
     func testConsentIsOfferedBeforeAnythingIsRecordedAndNothingIsPreTicked() {
         let app = launchSignedOutClient()
 
-        XCTAssertTrue(app.otherElements[A11yUITestID.consentTodayCard].waitForExistence(timeout: 20)
-                      || app.buttons[A11yUITestID.consentOpenButton].waitForExistence(timeout: 5),
+        XCTAssertTrue(app.descendants(matching: .any)[A11yUITestID.consentTodayCard].firstMatch.waitForExistence(timeout: 30),
                       "A fresh account should be offered the health-data choice on Today")
+        XCTAssertTrue(app.buttons[A11yUITestID.consentOpenButton].firstMatch.waitForExistence(timeout: 10),
+                      "The choice must be reachable from Today")
 
         app.buttons[A11yUITestID.consentOpenButton].firstMatch.tapWhenReady()
 
@@ -50,7 +51,10 @@ final class HealthDataConsentUITests: XCTestCase {
     func testDecliningLeavesRecordingOffAndSaysSo() {
         let app = launchSignedOutClient()
         app.buttons[A11yUITestID.consentOpenButton].firstMatch.tapWhenReady()
-        app.buttons[A11yUITestID.consentNotNowButton].tapWhenReady()
+        let notNow = app.buttons[A11yUITestID.consentNotNowButton]
+        XCTAssertTrue(notNow.waitForExistence(timeout: 20), "Declining must be offered")
+        app.scrollUntilHittable(notNow)
+        notNow.tapWhenReady()
 
         // The workout is still reachable; starting it routes back to the choice rather than
         // recording anything.
@@ -98,23 +102,30 @@ final class HealthDataConsentUITests: XCTestCase {
         XCTAssertTrue(app.buttons[A11yUITestID.privacyOpenButton].waitForExistence(timeout: 20),
                       "Privacy must be reachable from Today")
         app.buttons[A11yUITestID.privacyOpenButton].tapWhenReady()
-        let withdraw = app.buttons["\(A11yUITestID.privacyWithdrawButton).performanceRecording"]
+        let withdraw = app.buttons["\(A11yUITestID.privacyWithdrawButton).performanceRecording"].firstMatch
         XCTAssertTrue(withdraw.waitForExistence(timeout: 15), "An in-force purpose should offer withdrawal")
+        app.scrollUntilHittable(withdraw)
         withdraw.tapWhenReady()
-        app.buttons[A11yUITestID.privacyWithdrawConfirmButton].tapWhenReady()
+        // The confirmation is a system alert; its buttons are addressed by label. firstMatch
+        // is required: the view declares more than one alert, so the query is ambiguous.
+        let confirm = app.alerts.firstMatch.buttons["Turn off"].firstMatch
+        XCTAssertTrue(confirm.waitForExistence(timeout: 15), "Withdrawal should ask for confirmation")
+        confirm.tapWhenReady()
 
         // The purpose is now off, and re-granting is offered instead of withdrawal.
-        XCTAssertTrue(app.buttons["\(A11yUITestID.privacyGrantButton).performanceRecording"].waitForExistence(timeout: 15),
+        XCTAssertTrue(app.buttons["\(A11yUITestID.privacyGrantButton).performanceRecording"].firstMatch.waitForExistence(timeout: 15),
                       "After withdrawal the purpose should read as off")
 
         // The recorded set survived: the unfinished session is still resumable with its set.
-        app.navigationBars.buttons.element(boundBy: 0).tapWhenReady()
+        let back = app.navigationBars.buttons.firstMatch
+        XCTAssertTrue(back.waitForExistence(timeout: 15), "Privacy should have a back control")
+        back.tapWhenReady()
         XCTAssertTrue(app.buttons["today_resume_workout"].waitForExistence(timeout: 20),
                       "The recorded session must survive withdrawal")
         app.buttons["today_resume_workout"].tapWhenReady()
         XCTAssertTrue(app.otherElements["set_entry_row.0"].waitForExistence(timeout: 15),
                       "Withdrawal must not delete an already-recorded set")
-        XCTAssertTrue(app.otherElements[A11yUITestID.consentRequiredNotice].waitForExistence(timeout: 15),
+        XCTAssertTrue(app.descendants(matching: .any)[A11yUITestID.consentRequiredNotice].firstMatch.waitForExistence(timeout: 15),
                       "With recording withdrawn, the form should be replaced by an honest notice")
     }
 
@@ -202,8 +213,21 @@ extension XCUIApplication {
             XCTAssertTrue(toggle.waitForExistence(timeout: 20), "\(purpose) control should be present")
             if toggle.value as? String != "1" { toggle.tapWhenReady() }
         }
-        buttons[A11yUITestID.consentSaveButton].tapWhenReady()
+        let save = buttons[A11yUITestID.consentSaveButton]
+        scrollUntilHittable(save)
+        save.tapWhenReady()
         XCTAssertTrue(waitForToday(timeout: 30), "Saving the choices should return to Today")
+    }
+
+    /// Scroll the screen until `element` is hittable. The consent screen is deliberately
+    /// long — three purposes, each with its own explanation — so the save control sits below
+    /// the fold at default type size and further still at accessibility sizes.
+    @MainActor
+    func scrollUntilHittable(_ element: XCUIElement, attempts: Int = 8) {
+        for _ in 0..<attempts {
+            if element.exists && element.isHittable { return }
+            swipeUp()
+        }
     }
 
     /// True once the Client Today screen is showing (either entry point).

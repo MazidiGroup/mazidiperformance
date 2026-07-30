@@ -143,13 +143,16 @@ struct HealthDataConsentView: View {
             }
             .padding(.top, MazidiMetric.tightSpacing)
         } label: {
+            // The identifier goes on the label, not the DisclosureGroup: an accessibility
+            // modifier on the group would collapse it into one element, so VoiceOver could
+            // never reach the notice text it reveals.
             Text("What happens to this information")
                 .font(MazidiFont.bodyEmphasis)
                 .foregroundStyle(MazidiColor.link)
                 .frame(minHeight: MazidiMetric.minTarget, alignment: .leading)
+                .accessibilityIdentifier(A11yID.consentNoticeDisclosure)
         }
         .tint(MazidiColor.link)
-        .accessibilityIdentifier(A11yID.consentNoticeDisclosure)
     }
 
     private var actions: some View {

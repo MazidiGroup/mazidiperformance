@@ -83,10 +83,13 @@ struct HealthDataPrivacyView: View {
                     .font(MazidiFont.callout)
                     .foregroundStyle(MazidiColor.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
+                // Row identifier lives on a leaf: an accessibility modifier on the card would
+                // collapse it into one element and hide the buttons below.
                 Text(detail(for: decision))
                     .font(MazidiFont.caption)
                     .foregroundStyle(MazidiColor.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("\(A11yID.privacyPurposeRow).\(purpose.rawValue)")
 
                 if decision.isPermitted {
                     Button("Turn off") { pendingWithdrawal = purpose }
@@ -102,7 +105,6 @@ struct HealthDataPrivacyView: View {
                 }
             }
         }
-        .accessibilityIdentifier("\(A11yID.privacyPurposeRow).\(purpose.rawValue)")
     }
 
     /// Status is never colour-only: every state pairs a tint with an icon and a text label.
@@ -168,13 +170,14 @@ struct HealthDataPrivacyView: View {
             }
             .padding(.top, MazidiMetric.tightSpacing)
         } label: {
+            // Identifier on the label, not the group — see HealthDataConsentView.
             Text("Your choices so far")
                 .font(MazidiFont.bodyEmphasis)
                 .foregroundStyle(MazidiColor.link)
                 .frame(minHeight: MazidiMetric.minTarget, alignment: .leading)
+                .accessibilityIdentifier(A11yID.privacyHistoryDisclosure)
         }
         .tint(MazidiColor.link)
-        .accessibilityIdentifier(A11yID.privacyHistoryDisclosure)
     }
 
     private static func historyLine(_ record: HealthDataConsent) -> String {

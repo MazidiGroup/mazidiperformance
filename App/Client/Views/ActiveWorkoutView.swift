@@ -236,16 +236,18 @@ struct ActiveWorkoutView: View {
         MazidiCard {
             VStack(alignment: .leading, spacing: MazidiMetric.tightSpacing) {
                 StatusBadge(kind: .info, label: "Not recording", systemImage: "hand.raised")
+                // Identifiers go on leaf views, never on the card — an accessibility modifier
+                // on a container collapses it into one element and hides the button inside.
                 Text("You haven't agreed to the app recording your training, so sets aren't being saved. You can still follow the workout.")
                     .font(MazidiFont.callout)
                     .foregroundStyle(MazidiColor.text)
                     .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier(A11yID.consentRequiredNotice)
                 Button("Review your choices", action: onReviewConsent)
                     .buttonStyle(.mazidiPrimary)
                     .accessibilityIdentifier(A11yID.consentOpenButton)
             }
         }
-        .accessibilityIdentifier(A11yID.consentRequiredNotice)
     }
 
     /// A set the consent gate refused. It is held, not dropped — the client is told exactly
@@ -259,6 +261,7 @@ struct ActiveWorkoutView: View {
                         .font(MazidiFont.callout)
                         .foregroundStyle(MazidiColor.text)
                         .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier(A11yID.heldEntryNotice)
                     Button("Review your choices", action: onReviewConsent)
                         .buttonStyle(.mazidiSecondary)
                         .accessibilityIdentifier(A11yID.consentOpenButton)
@@ -274,7 +277,6 @@ struct ActiveWorkoutView: View {
                         .accessibilityIdentifier(A11yID.heldEntryDiscardButton)
                 }
             }
-            .accessibilityIdentifier(A11yID.heldEntryNotice)
         }
     }
 

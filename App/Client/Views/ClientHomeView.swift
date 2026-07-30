@@ -99,16 +99,19 @@ struct ClientHomeView: View {
             MazidiCard {
                 VStack(alignment: .leading, spacing: MazidiMetric.tightSpacing) {
                     StatusBadge(kind: .info, label: "Before you record", systemImage: "hand.raised")
+                    // Identifiers go on leaf views, never on the card: an accessibility
+                    // modifier on a container turns it into a single element and hides the
+                    // button inside it from VoiceOver and from UI tests.
                     Text("Recording your training is your choice. Have a look at what the app would record and decide — you can pick each item separately.")
                         .font(MazidiFont.callout)
                         .foregroundStyle(MazidiColor.text)
                         .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier(A11yID.consentTodayCard)
                     Button("Review your choices", action: onReviewConsent)
                         .buttonStyle(.mazidiSecondary)
                         .accessibilityIdentifier(A11yID.consentOpenButton)
                 }
             }
-            .accessibilityIdentifier(A11yID.consentTodayCard)
         }
     }
 
