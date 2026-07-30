@@ -43,6 +43,21 @@ targets:
         # App icon lives in App/Resources/Assets.xcassets (single 1024×1024 source;
         # Xcode derives every other size). Required for App Store submission.
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+      configs:
+        # LOCAL_IDENTITY gates the device-local test profile (ADR-0014) — the only way to
+        # open the app while no authentication backend exists (R-01). It is set for Debug
+        # and Staging ONLY. Staging is the TestFlight configuration and is a *release*
+        # build, so `#if DEBUG` would not survive there; that is why this is its own
+        # condition rather than a reuse of DEBUG.
+        #
+        # Release deliberately has NO entry here: it keeps `UnavailableAuthProvider`, so an
+        # accidental App Store submission still cannot sign in. Do not add LOCAL_IDENTITY to
+        # Release — `Scripts/check-release-isolation.sh` fails the build if the symbols ever
+        # appear in a Release binary.
+        Debug:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: "DEBUG LOCAL_IDENTITY"
+        Staging:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: "LOCAL_IDENTITY"
     sources:
       - App
       # Canonical exercise catalogue + delivery manifest (ADR-0010), bundled read-only
