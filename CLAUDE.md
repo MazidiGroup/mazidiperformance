@@ -83,6 +83,12 @@ These are product/safety rules, not preferences — do not weaken them to ship a
   **mocked/fixture-backed** vs **planned** vs **tested**. Fixtures and simulators must be clearly
   labelled (e.g. behind provider protocols, `#if DEBUG`, or explicit `Fixture…` names). No
   backend exists yet (R-01/R-02) — do not fabricate live behaviour.
+- **Build configurations are a boundary.** Debug, Staging and Release differ deliberately.
+  `LOCAL_IDENTITY` (Debug + Staging only) compiles the device-local **test profile** that lets
+  TestFlight builds be opened without a backend (ADR-0014) — it is not authentication and must
+  never be described as one. **Release keeps `UnavailableAuthProvider` and must stay free of
+  those symbols**; `Scripts/check-release-isolation.sh` proves it on the built binary in CI.
+  Never gate a Staging-visible feature on `#if DEBUG` alone — Staging is a release build.
 - **Focused branches and commits.** One concern per branch; small, self-describing commits. Do
   not bundle unrelated changes.
 - **Tests and builds before "done."** Before claiming a task complete, run the relevant checks:

@@ -129,6 +129,22 @@ jobs:
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
             build
 
+      # 6b) Prove the configuration boundary on the built artefact: the local device test
+      #     profile (ADR-0014) and the development identities (ADR-0008 §6) must not exist in
+      #     a Release binary. Source-level `#if` gates are easy to break silently, so this
+      #     scans the binary itself.
+      - name: Release isolation check (no local-identity or dev symbols)
+        run: |
+          set -euxo pipefail
+          BUILT=$(xcodebuild \
+            -project "$PROJECT" \
+            -scheme "${{ steps.scheme.outputs.scheme }}" \
+            -configuration Release \
+            -destination "generic/platform=iOS Simulator" \
+            -showBuildSettings \
+            | awk -F' = ' '/ BUILT_PRODUCTS_DIR/{print $2; exit}')
+          Scripts/check-release-isolation.sh "$BUILT/${{ steps.scheme.outputs.scheme }}.app"
+
       # 7) On failure, upload result bundles so the failure is diagnosable off-runner.
       - name: Upload result bundles
         if: failure()

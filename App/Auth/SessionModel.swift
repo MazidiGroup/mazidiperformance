@@ -32,6 +32,12 @@ final class SessionModel {
     /// refresh) — shells show honest local-only wording where relevant.
     private(set) var isOfflineAuthenticated = false
 
+    #if LOCAL_IDENTITY
+    /// The role of the active **local test profile** (ADR-0014), or nil when the session is
+    /// not one. Drives the honest local-profile labelling and the role switch.
+    private(set) var localProfileRole: RoleClaim?
+    #endif
+
     private(set) var clientEnvironment: ClientEnvironment?
     private(set) var coachEnvironment: CoachEnvironment?
 
@@ -44,11 +50,20 @@ final class SessionModel {
     init() {
         let provider: any AuthProviding
         let credentialStore: any CredentialStore
-        #if DEBUG
+        #if LOCAL_IDENTITY
+        // Debug + Staging (the TestFlight configuration): a device-local test profile
+        // occupies the provider slot so the app can be opened on a real device while no
+        // backend exists (ADR-0014). It is not authentication and the UI never says it is.
+        // In DEBUG it also forwards the ADR-0008 §6 fixture identities.
+        provider = LocalDeviceAuthProvider(profiles: Self.localProfileStore())
+        #elseif DEBUG
         provider = DevelopmentAuthProvider()
-        credentialStore = Self.developmentCredentialStore() ?? KeychainCredentialStore()
         #else
         provider = UnavailableAuthProvider()
+        #endif
+        #if DEBUG
+        credentialStore = Self.developmentCredentialStore() ?? KeychainCredentialStore()
+        #else
         credentialStore = KeychainCredentialStore()
         #endif
         self.credentialStore = credentialStore
@@ -79,6 +94,25 @@ final class SessionModel {
     }
     #endif
 
+    #if LOCAL_IDENTITY
+    /// Storage for the local test profile (ADR-0014). The Keychain is the normal path —
+    /// including every Staging/TestFlight build. Under the DEBUG UI-test launch variables
+    /// the same Keychain-free seam used for credentials applies, because CI builds the app
+    /// unsigned and an unsigned simulator app cannot use the Keychain.
+    private static func localProfileStore() -> any LocalDeviceProfileStoring {
+        #if DEBUG
+        let env = ProcessInfo.processInfo.environment
+        if let dir = env["MAZIDI_STORE_DIR"] {
+            return LocalDeviceProfileFileStore(directory: URL(fileURLWithPath: dir, isDirectory: true))
+        }
+        if env["MAZIDI_STORE_MODE"] == "ephemeral" {
+            return InMemoryLocalDeviceProfileStore()
+        }
+        #endif
+        return KeychainLocalDeviceProfileStore()
+    }
+    #endif
+
     func start() async {
         guard observation == nil else { return }
         #if DEBUG
@@ -104,6 +138,24 @@ final class SessionModel {
         await coordinator.signIn(.development(identity: devIdentity))
     }
 
+    #if LOCAL_IDENTITY
+    /// Open the app with this device's local test profile in `role` (ADR-0014). Goes
+    /// through the ordinary coordinator sign-in — no state machine step is skipped.
+    func continueAsLocalProfile(role: RoleClaim) async {
+        await coordinator.signIn(.development(identity: LocalDeviceAccount.signInIdentity(for: role)))
+    }
+
+    /// Switch the local test profile to the other role. Deliberately implemented as a full
+    /// **account switch**: sign out first (generation bump → environments invalidated and
+    /// the account database closed) and only then sign in as the other role's account,
+    /// which derives its own account-scoped directory. No state crosses the two shells.
+    func switchLocalRole(to role: RoleClaim) async {
+        guard localProfileRole != nil else { return }
+        _ = await coordinator.signOut()
+        await continueAsLocalProfile(role: role)
+    }
+    #endif
+
     func cancelAuthentication() async { await coordinator.cancelAuthentication() }
     func acknowledgeFailure() async { await coordinator.acknowledgeFailure() }
     func unlock() async { await coordinator.unlock() }
@@ -116,6 +168,12 @@ final class SessionModel {
 
     private func handle(_ phase: AuthPhase) async {
         let generation = await coordinator.generation
+        #if LOCAL_IDENTITY
+        // Non-nil only while the active session is a local test profile, so the honest
+        // "local test profile" surfaces appear for exactly those sessions and never for a
+        // development fixture identity (or a real account, once one can exist).
+        localProfileRole = phase.session.flatMap { LocalDeviceAccount(accountID: $0.claims.accountID)?.role }
+        #endif
 
         // Tear down account environments whenever data access ends or the
         // generation moved on (sign-out, switch): audit, close, drop (ADR-0008 §8).

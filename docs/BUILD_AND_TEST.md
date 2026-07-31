@@ -83,6 +83,51 @@ swiftlint              # config in .swiftlint.yml (pending)
   CODE_SIGNING_REQUIRED=NO` to `xcodebuild … test` — a **signed** local run hides this
   class of failure because the app then has a keychain-access group.
 
+## Local device test profile — Debug + Staging only (ADR-0014)
+
+TestFlight builds use the **Staging** configuration, which is a *release-style* build. Since
+no authentication backend exists (R-01), a Staging build would otherwise be unusable: it
+boots to the signed-out surface and every sign-in attempt fails. `LocalDeviceAuthProvider`
+gives it a **device-local test profile** — not authentication, and never described as one.
+
+- **Gate:** the compilation condition `LOCAL_IDENTITY`, set in `project.yml` for **Debug and
+  Staging only** (`SWIFT_ACTIVE_COMPILATION_CONDITIONS`). `#if DEBUG` is deliberately *not*
+  used: Staging is a release build and would lose it.
+- **Release is unchanged** — `UnavailableAuthProvider`, no local profile, no dev identities.
+  Verify per config with:
+
+  ```bash
+  xcodebuild -project MazidiPerformance.xcodeproj -target MazidiPerformance \
+    -configuration Release -showBuildSettings | grep SWIFT_ACTIVE_COMPILATION_CONDITIONS
+  # Release: prints nothing. Debug: "DEBUG LOCAL_IDENTITY". Staging: "LOCAL_IDENTITY".
+  ```
+
+- **Binary proof** (runs in CI after the Release build; run it locally too):
+
+  ```bash
+  Scripts/check-release-isolation.sh \
+    "$(xcodebuild -project MazidiPerformance.xcodeproj -scheme MazidiPerformance \
+        -configuration Release -destination 'generic/platform=iOS Simulator' \
+        -showBuildSettings | awk -F' = ' '/ BUILT_PRODUCTS_DIR/{print $2; exit}')/MazidiPerformance.app"
+  ```
+
+  It fails if any local-identity or development symbol is present, and also if its positive
+  control is missing (so a wrong/stripped artefact cannot pass silently).
+- **Identity:** one random UUID in the Keychain (`com.mazidigroup.mazidi.local-profile`,
+  after-first-unlock-this-device-only). Each role gets its **own** account id
+  (`local-test-profile.v1.<uuid>.<role>`) and therefore its own account-scoped database;
+  switching role runs the full sign-out/sign-in account switch.
+- **Under UI test** the profile uses the same Keychain-free seam as credentials
+  (`MAZIDI_STORE_DIR` → file-backed, `MAZIDI_STORE_MODE=ephemeral` → in-memory), because CI
+  builds the app unsigned. Journeys: `UITests/LocalDeviceIdentityUITests.swift`.
+- **Gotcha — an UNSIGNED Staging build cannot create a profile.** Building Staging with
+  `CODE_SIGNING_ALLOWED=NO` (as CI does for the app build) produces a simulator app without a
+  keychain-access group, so the profile store fails and the chooser reports "Secure storage is
+  unavailable on this device right now" — honest, and not a defect. To exercise the flow by
+  hand, build Staging **signed** (the ordinary local build, no `CODE_SIGNING_*` overrides);
+  TestFlight builds are signed, so they use the Keychain normally. There is deliberately no
+  plaintext fallback.
+
 ## Coach programming slice (ADR-0009)
 
 The Coach shell authors workouts against the bundled fixture exercise library; the dev

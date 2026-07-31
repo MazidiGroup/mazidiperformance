@@ -1,6 +1,12 @@
 # ADR-0008 — Authentication sessions, role routing, and account-scoped data boundaries
 
 **Status:** Accepted · 2026-07-24
+**Amended by:** [ADR-0014](ADR-0014-local-device-identity.md) — a device-local test profile
+occupies the provider slot in **Debug and Staging only** (`LOCAL_IDENTITY`), so TestFlight
+builds can be opened while no backend exists. It amends §6 (a second non-production
+provider, reaching release-style Staging builds) and §7 (in those builds the role claim
+originates from a tester's choice, minted into a role-scoped account, rather than from a
+backend). **Release is unchanged by that ADR** — see §6 below.
 
 ## Context
 Until now the app had pseudo-authentication: `AppModel.activeRole` was a UI preference set
@@ -67,12 +73,26 @@ this provider. In Release the provider slot is `UnavailableAuthProvider`, which 
 typed and honest ("sign-in arrives with the backend contract", R-01) — no role can be
 obtained in Release by any preference, launch argument, or environment variable.
 
+*Amendment (ADR-0014):* Debug **and Staging** additionally compile
+`LocalDeviceAuthProvider` behind the `LOCAL_IDENTITY` compilation condition, because
+Staging is a release-style build that `#if DEBUG` cannot reach and TestFlight builds would
+otherwise be unusable. It is a local test profile, not authentication, and is labelled as
+such in the UI. **Release still has only `UnavailableAuthProvider`**, and
+`Scripts/check-release-isolation.sh` fails the build if any local-identity or development
+symbol is found in a Release binary.
+
 ### 7. Role routing from claims only
 The shells route from validated `SessionClaims.roles`: exactly `[.client]` → Client
 shell, exactly `[.coach]` → Coach shell; **missing or conflicting role sets land in a
 safe error state** (visible, non-crashing, offering sign-out). A signed-in identity maps
 to one active role context (ARCHITECTURE.md §4); assistant-coach and relationship-scoped
 authorization remain deferred.
+
+*Amendment (ADR-0014):* in `LOCAL_IDENTITY` builds the claims a shell routes from may have
+been issued by the local test profile, whose role the tester picked before any session
+existed. Routing itself is unchanged — it still reads only `SessionClaims`, still allows
+exactly one role, and each role is a **separate account id** with its own account-scoped
+database, so switching role is an account switch, not a preference toggle.
 
 ### 8. Stale-task protection: session generations
 The coordinator increments a monotonically increasing **generation** on every sign-in,
