@@ -110,3 +110,11 @@ schemes:
       targets: { MazidiPerformance: all }
     test:
       targets: [MazidiPerformanceUITests]
+    # Archive with Staging, not Release. TestFlight builds must carry the
+    # LOCAL_IDENTITY condition (Debug + Staging only, ADR-0014); a Release archive
+    # has no local profile, so every tester would hit the sign-in wall with no way
+    # past it. Release stays available by switching this in Edit Scheme → Archive,
+    # which is a deliberate act — appropriate, since App Store submission is out of
+    # scope until the backend lands.
+    archive:
+      config: Staging
