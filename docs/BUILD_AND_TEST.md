@@ -120,6 +120,13 @@ gives it a **device-local test profile** — not authentication, and never descr
 - **Under UI test** the profile uses the same Keychain-free seam as credentials
   (`MAZIDI_STORE_DIR` → file-backed, `MAZIDI_STORE_MODE=ephemeral` → in-memory), because CI
   builds the app unsigned. Journeys: `UITests/LocalDeviceIdentityUITests.swift`.
+- **Gotcha — an UNSIGNED Staging build cannot create a profile.** Building Staging with
+  `CODE_SIGNING_ALLOWED=NO` (as CI does for the app build) produces a simulator app without a
+  keychain-access group, so the profile store fails and the chooser reports "Secure storage is
+  unavailable on this device right now" — honest, and not a defect. To exercise the flow by
+  hand, build Staging **signed** (the ordinary local build, no `CODE_SIGNING_*` overrides);
+  TestFlight builds are signed, so they use the Keychain normally. There is deliberately no
+  plaintext fallback.
 
 ## Coach programming slice (ADR-0009)
 
