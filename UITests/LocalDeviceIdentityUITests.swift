@@ -47,17 +47,47 @@ final class LocalDeviceIdentityUITests: XCTestCase {
                       "\(expectedID) should appear after choosing \(button)")
     }
 
+    /// Grant health-data consent (ADR-0013) through the real screen, scrolling each control
+    /// into view first. The shared helper assumes every control is on screen at once; the
+    /// local-profile banner takes a strip of the shell, so the last purpose and the save
+    /// button sit below the fold — exactly as they would at a larger text size.
+    @MainActor
+    private func grantConsent(_ app: XCUIApplication) {
+        XCTAssertTrue(app.waitForToday(timeout: 60), "Client Today should be up before choosing")
+        let open = app.buttons["consent_open_button"].firstMatch
+        guard open.waitForExistence(timeout: 30) else { return } // already in force
+        open.tapWhenReadyLocalProfile()
+        for purpose in ["performanceRecording", "perceivedExertionRecording", "coachSharing"] {
+            let toggle = app.switches["consent_purpose_toggle.\(purpose)"]
+            XCTAssertTrue(toggle.waitForExistence(timeout: 20), "\(purpose) control should be present")
+            app.scrollUntilHittable(toggle)
+            if toggle.value as? String != "1" { toggle.tapWhenReadyLocalProfile() }
+        }
+        let save = app.buttons["consent_save_button"]
+        app.scrollUntilHittable(save)
+        save.tapWhenReadyLocalProfile()
+        XCTAssertTrue(app.waitForToday(timeout: 30), "Saving the choices should return to Today")
+    }
+
     /// Put the client account into a resumable-workout state, so later assertions can tell
     /// "this account's data" from "the other account's data".
     @MainActor
     private func startAndExitWorkout(_ app: XCUIApplication) {
-        app.grantHealthDataConsent()
-        app.buttons["today_start_workout"].tapWhenReadyLocalProfile()
-        app.buttons["overview_begin_button"].tapWhenReadyLocalProfile()
-        app.buttons["set_entry_log_button"].tapWhenReadyLocalProfile()
+        grantConsent(app)
+        let start = app.buttons["today_start_workout"]
+        app.scrollUntilHittable(start)
+        start.tapWhenReadyLocalProfile()
+        let begin = app.buttons["overview_begin_button"]
+        app.scrollUntilHittable(begin)
+        begin.tapWhenReadyLocalProfile()
+        let log = app.buttons["set_entry_log_button"]
+        app.scrollUntilHittable(log)
+        log.tapWhenReadyLocalProfile()
         XCTAssertTrue(app.otherElements["set_entry_row.0"].waitForExistence(timeout: 20),
                       "The set should be recorded")
-        app.buttons["active_pause_button"].tapWhenReadyLocalProfile()
+        let pause = app.buttons["active_pause_button"]
+        app.scrollUntilHittable(pause)
+        pause.tapWhenReadyLocalProfile()
         app.buttons["pause_exit_keep_button"].tapWhenReadyLocalProfile()
         XCTAssertTrue(app.buttons["today_resume_workout"].waitForExistence(timeout: 20),
                       "The account should now have a resumable workout")
