@@ -76,21 +76,26 @@ struct LocalProfileChooser: View {
 
 // MARK: - Shell wrapper
 
-/// Wraps a role shell with the local-profile banner, inset into the bottom safe area so
-/// the shell's own layout (and its navigation stack) is untouched. Applied only at the
-/// `LOCAL_IDENTITY` call sites in `SessionRootView`; the banner appears only while the
-/// active session actually is a local test profile.
+/// Wraps a role shell with the local-profile banner. The banner takes its own row in a
+/// plain vertical stack rather than a `safeAreaInset`: an inset applied outside the shell's
+/// `NavigationStack` does not reach the scroll views on pushed screens, so the banner ended
+/// up sitting *over* their last control instead of above it. Splitting the space shrinks
+/// the shell's frame, so every screen inside lays out and scrolls within what is left.
+///
+/// Applied only at the `LOCAL_IDENTITY` call sites in `SessionRootView`; the banner appears
+/// only while the active session actually is a local test profile.
 struct LocalProfileShell<Content: View>: View {
     @Environment(SessionModel.self) private var session
     @ViewBuilder var content: Content
 
     var body: some View {
-        content
-            .safeAreaInset(edge: .bottom) {
-                if let role = session.localProfileRole {
-                    LocalProfileBanner(role: role)
-                }
+        VStack(spacing: 0) {
+            content
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            if let role = session.localProfileRole {
+                LocalProfileBanner(role: role)
             }
+        }
     }
 }
 
@@ -134,9 +139,9 @@ struct LocalProfileBanner: View {
         .overlay(alignment: .top) {
             Rectangle().fill(MazidiColor.hairline).frame(height: 1)
         }
-        .accessibilityIdentifier("local_profile_banner")
-        // Read after the shell's own content: it is context, not the primary task.
-        .accessibilitySortPriority(-1)
+        // No accessibility modifier on this container: applying one merges the badge, the
+        // explanation and the switch control into a single element, which hides the button
+        // from VoiceOver navigation (and from UI tests) rather than helping.
     }
 }
 #endif
