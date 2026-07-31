@@ -1,190 +1,110 @@
-# Session handoff — 2026-07-24 (evening)
+# Session handoff — 31 July 2026
 
-Written for a fresh Claude Code session with no access to the prior conversation.
-Everything below was verified against the repository with Git/`gh`/`swift test` at
-writing time — re-verify before editing (state moves).
+Written for a fresh session with no access to the prior conversation. Everything below was
+verified against the repos, GitHub and the live site at writing time. **Re-verify before
+acting — state moves.** (Supersedes the 24 July handoff.)
 
-## Repository state (verified)
+## Start here
 
-- **Root:** `/Users/mazadi/mazidiperformance`
-- **Branch:** `main`, tracking `origin/main`, **0 ahead / 0 behind**
-- **HEAD:** `c6a86027467f19481b620e0206da3665146b8cb1`
-  ("Merge Coach programming and Client workout assignment slice")
-- **origin/main:** same commit (level)
-- **Working tree:** clean — no staged, modified, or untracked files (this handoff file
-  is the only untracked artifact once written, left uncommitted on purpose so `main`
-  isn't polluted; commit it to the next milestone branch if wanted)
-- **No running/interrupted commands.** All background builds/tests from the previous
-  session completed; nothing needs rerunning.
-- **PR #5** (Coach programming slice) is **MERGED** (2026-07-24T18:32Z, merge commit
-  `c6a8602`). Branch CI for its head `6240b10` completed **success**
-  (run 30116429434). A post-merge CI run on `main` (run 30117340209, sha `c6a8602`)
-  was in progress at handoff time — check its outcome:
-  `gh run list --repo MazidiGroup/mazidiperformance --limit 3`
-- **The next milestone branch `feature/exercise-library-content-pipeline` does NOT
-  exist** locally or on origin. **Work on that milestone has NOT begun.** No product
-  changes exist beyond `main`.
+**Open the new session in `/Users/mazadi/mazidiperformance`** — the iOS app. That is where the
+remaining work is. Two other repos exist (below); open them only if the task concerns them.
 
-## Completed milestones (merged into `main` — do not recreate or broadly refactor)
+Read `CLAUDE.md` first, then this file, then `docs/architecture/adr/` (ADR-0001…0014).
 
-1. **Foundation + Client workout slice** — `Packages/MazidiKit` split
-   (MazidiFoundations/Domain/Persistence/Sync/Services/Networking), workout-session
-   state machine, type-aware prescriptions, offline outbox with idempotency keys +
-   per-aggregate ordering (ADR-0003), audit chain (ADR-0006), Client UI (Today →
-   overview → active → complete) with design tokens + accessibility, honest sync
-   status wording (4i).
-2. **Durable GRDB persistence** — leaf target `MazidiPersistenceGRDB` (the only
-   GRDB importer, ADR-0007), migration `v1-workout-persistence`, atomic
-   session+outbox transactions, typed corruption recovery (quarantine, never
-   silent-empty), rest-timer/position restoration, relaunch UI journey.
-3. **Auth/session/account boundaries (ADR-0008)** — `MazidiAuth` (AuthPhase reducer,
-   SessionCoordinator with generations + deduplicated refresh, CredentialStore),
-   Keychain adapter (`kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`),
-   role-claim routing, account-scoped DB dirs
-   `accounts/<hex32 SHA-256 domain-tagged>` under
-   `Application Support/MazidiPerformance/`, close-before-transition, DEBUG dev
-   provider (`dev-client-001/002`, `dev-coach-001`) with Release exclusion proven by
-   binary greps + tests, Keychain-free UI-test credential stores (CI builds unsigned).
-4. **Coach programming + assignment slice (ADR-0009)** — templates → immutable
-   versions → assignments with frozen snapshots, migration `v2-coach-programming`,
-   ProgrammingRepository (generic outbox param, atomic writes), service
-   start/completion linkage with duplicate-completion prevention, Coach UI (list/
-   editor/prescription/assign/status), Client Today assignment surfacing with fixture
-   fallback, DEBUG-only `DevelopmentAssignmentRelay` (delivery stand-in; coach status
-   stays "Queued — delivery confirms with backend").
+## The three repositories
 
-**Boundaries that must hold:** GRDB only inside `MazidiPersistenceGRDB`; provider
-SDKs/auth types out of domain/views/services; role from validated claims only;
-account DBs isolated + closed on transition; immutable versions/snapshots never
-rewritten; no fabricated backend; every mutation atomic with its outbox op;
-DEBUG-only fixtures with Release-isolation proofs; Swift 6.1 CI constraints
-(no parameterized protocols in compositions; XCUITest is @MainActor).
+| Path | Repo | State |
+|---|---|---|
+| `/Users/mazadi/mazidiperformance` | `MazidiGroup/mazidiperformance` | **iOS app — work here.** `main` = `54dd3ac`, clean, 0 open PRs |
+| `/Users/mazadi/mazidiperformance-web` | `MazidiGroup/mazidiperformance-web` (private) | Privacy centre. `master` = `7df893a`. **LIVE** |
+| `/Users/mazadi/mazidi-platform` | `MazidiGroup/mazidi-platform` | MazidiGroup website. `master` = `1078eee` — **untouched, do not modify** |
 
-## Current milestone: `feature/exercise-library-content-pipeline`
+## What the product is
 
-**NOT STARTED.** No branch, no ADR, no code. Objective (from the milestone brief):
-canonical exercise catalogue; deterministic exercise + media identifiers; read-only
-source-library audit tooling; deterministic versioned media manifest; review
-reporting for ambiguous/unmatched mappings; provider-neutral remote-media
-resolution; bounded validated media caching; coach search/filter/preview with
-stable-ID selection; client media resolution + legacy-fixture compatibility.
+Subscription iOS app for independent personal trainers (Coach) and their clients (Client).
+Swift 6 / SwiftUI, `App/` + `Packages/MazidiKit`. `CLAUDE.md` holds the working rules — they
+are strict and load-bearing (honesty about status, offline-first, accessibility as
+definition-of-done, no fabricated backend).
 
-## NON-NEGOTIABLE source-library rule
+## Where things stand
 
-`/Users/mazadi/Documents/MazidiPerformance/Animation_Pack_20-07-26` is **strictly
-read-only** (also stated in CLAUDE.md). Never rename/move/delete/rewrite its files,
-never generate anything inside it, never commit it, never copy the complete library
-into the repo or app bundle. **Verified contents at handoff:** three zip archives —
-`full-library-NTRkdOevZfhYISO5pBWekIctpb7YNr.zip`, `full-library-metadata.zip`,
-`full-library-posters.zip` (audit tooling must therefore read from zips or extract to
-an isolated working area). All generated audit/manifest/report/poster/staging output
-goes to a **Git-ignored** working directory (add an ignore rule for it).
+### Live
+Privacy centre at `https://mazidiperformance.mazidigroup.com/privacy` (+ `/privacy/request`,
+`/privacy/complaints`). Verified 200, valid certificate, HTTP→HTTPS redirect.
+`mazidigroup.com/privacy` correctly **404s** — the app notice must never serve the platform site.
 
-## Approved design & media boundaries
+### Merged into the app's `main`
+Foundation, GRDB persistence, auth/session/account isolation, Coach programming + assignment,
+exercise catalogue (206 exercises) + media pipeline, backend sync foundation (contracts + DEBUG
+fake only), health-data consent flow (migration v4), local device profile for TestFlight
+(ADR-0014), build config, app icon.
 
-- Approved design source: `design/handoff-current` (frozen; tag
-  `design-handoff-v1.0.0`); asset rules:
-  `design/handoff-current/handoff/asset-cdn-integration.md`, `docs/ASSET_PIPELINE.md`;
-  client copy layer: `content/exercises/client-layer/` (draft status; slugs are the
-  join key).
-- Tracked media stays limited to the approved representative set (2 app-bundled
-  clips + the 12-clip/posters handoff sample). No full library in Git.
-- No production CDN provider/upload fabrication; no credentials, bucket keys,
-  signed URLs, or machine-specific absolute paths inside generated manifests.
+**346 package tests / 44 suites passing. GRDB pinned exactly 7.11.1.**
 
-## Facts verified from the repository (not chat memory)
+### Immediate task — get onto TestFlight
 
-- Package tests: **134 tests / 18 suites — pass** (run on `main` at `c6a8602`).
-- UI tests: **13 methods** (6 ClientWorkoutUITests, 3 ClientAuthUITests,
-  3 CoachProgrammingUITests, 1 PlaceholderUITests).
-- Migrations registered: `v1-workout-persistence`, `v2-coach-programming`
-  (`Packages/MazidiKit/Sources/MazidiPersistenceGRDB/GRDBSchema.swift`).
-- GRDB pinned **exact: "7.11.1"** in `Packages/MazidiKit/Package.swift`
-  (manifest-as-lockfile; upgrade procedure in `docs/BUILD_AND_TEST.md`).
-- `MANIFEST.sha256` convention: covers all tracked files (committed-blob sha256,
-  excludes itself); regenerate after tracked changes (recipe in git history:
-  "Regenerate MANIFEST.sha256" commits).
+Blocked on **one user action**: Apple team `JWAX6S948T` (paid membership, confirmed) has **no
+registered devices**, so automatic signing cannot create a provisioning profile.
 
-## Decisions still required (exercise-library milestone — none made yet)
+Fix: connect an iPhone by cable → Trust → Xcode → Window → Devices and Simulators. Or add the
+UDID at developer.apple.com → Devices.
 
-Canonical exercise-ID strategy; immutable media-ID strategy; catalogue schema and
-versioning; mapping confidence + review-status model; legacy fixture-slug migration;
-remote object-key convention; poster/video relationship; checksum + cache policy;
-unsupported/malformed media handling; ambiguous filename handling; offline fallback
-order; historical assignment compatibility. **Record these in the milestone ADR
-(ADR-0010) before implementation. Do not invent decisions as already made.**
+Verify: `security find-identity -v -p codesigning` must show a line containing `JWAX6S948T`.
+At handoff only an unrelated `D57QP5WB96` certificate existed.
 
-## Work completed in this session
+Then: Xcode → destination **Any iOS Device** → Product → Archive → Distribute App →
+TestFlight & App Store Connect. Bundle ID is `com.mazidigroup.MazidiPerformance` (capital M's).
+Version 1.0.1 (1). Icon is committed and verified 1024x1024 with no alpha.
 
-The prior session completed the Coach programming milestone (merged as PR #5) and
-opened/verified that PR. **No product changes exist for the exercise-library
-milestone: "No product changes completed in this session" applies to the new
-milestone.** No uncommitted work exists.
+**The scheme archives with `Staging`, deliberately.** Release has no `LOCAL_IDENTITY`
+condition, so a Release archive shows every tester a sign-in wall they cannot pass. Do not
+"fix" this by switching to Release.
 
-## Current failures and risks
+## Constraints — do not break these
 
-- **No failing tests or compiler errors.** All 134 package tests and 13 UI tests
-  pass; Debug and Release simulator builds succeed.
-- Post-merge CI on `main` (run 30117340209) was still in progress — verify it
-  finished green before branching (expected to: the identical tree passed on the
-  branch as run 30116429434).
-- CI toolchain gap (recurring, documented in `docs/BUILD_AND_TEST.md`): CI pins
-  **Xcode 16.4 / Swift 6.1 / iOS 18.5 sim, unsigned builds** — local is Xcode 26.6 /
-  Swift 6.3 / iOS 26.5. Known 6.1 breakers: parameterized protocols in protocol
-  compositions; non-@MainActor XCUITest code; Keychain unusable in unsigned builds
-  (use the existing DEBUG env-keyed test credential stores). Reproduce CI locally by
-  adding `CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO` to xcodebuild test.
-- Known issues tracker: `docs/KNOWN_ISSUES.md` (M4-M8, L1-L5 open; none blocking).
+1. **Local-only, TestFlight only. Not the App Store.** The product needs coach↔client delivery,
+   which needs a backend that does not exist. Internal testing only — external testing triggers
+   Beta App Review.
+2. **`LOCAL_IDENTITY` is Debug + Staging only.** Never `#if DEBUG` alone: Staging is a
+   release-style build. `Scripts/check-release-isolation.sh <app-bundle>` proves the Release
+   binary carries no local-identity or development symbols. Keep it passing.
+3. **The published notice must stay true of the app.** It states the app transmits nothing, has
+   no third-party processors, and offers no export/deletion/consent-withdrawal. If any of that
+   changes, the notice changes **in the same release** (`LEGAL_CHECKLIST.md` #14, web repo).
+4. **Release keeps `UnavailableAuthProvider`** so an accidental App Store submission fails closed.
+5. **An unsigned Staging build cannot create a local profile** (no keychain-access group). Build
+   Staging *signed* to test by hand. See `docs/BUILD_AND_TEST.md`.
 
-## Next actions, in order
+## Known gaps — all deliberate, all documented
 
-1. Read `CLAUDE.md`.
-2. Read this handoff.
-3. Verify Git state independently (`git status`, `git log --oneline -5`,
-   `gh run list --limit 3`).
-4. Read ADR-0001…0009 (`docs/architecture/adr/`), `docs/architecture/ARCHITECTURE.md`,
-   `docs/architecture/MIGRATIONS.md`, `docs/architecture/SECURITY_BOUNDARIES.md`,
-   `docs/ASSET_PIPELINE.md`, `design/handoff-current/handoff/asset-cdn-integration.md`,
-   `content/exercises/client-layer/README.md`, `docs/KNOWN_ISSUES.md`.
-5. Create the milestone branch from current `main` and push with tracking:
-   `git checkout -b feature/exercise-library-content-pipeline` +
-   `git push -u origin feature/exercise-library-content-pipeline`.
-6. Audit the source library **strictly read-only** (list zip contents without
-   extraction first, e.g. `unzip -l`; if extraction is needed, extract into a NEW
-   git-ignored working dir, never into the source folder).
-7. Write ADR-0010 (exercise catalogue / content pipeline) covering every
-   "decisions still required" item above, before any implementation.
-8. Implement in focused commit groups with tests; run the full validation ladder;
-   regenerate `MANIFEST.sha256`; push. Never merge into `main`.
+- **No backend.** ADR-0013 selected Supabase (London) but is **Accepted for provider selection
+  only**; four Phase 0 gates open (executed DPA with UK Addendum, DPIA, ICO registration,
+  solicitor confirmation of the Art. 9 basis). `SYNC_BASE_URL` / `MEDIA_BASE_URL` empty.
+- **No in-app account deletion** — issue #9. Not blocking now (no accounts created), but
+  Guideline 5.1.1(v) applies the moment account creation ships.
+- **15 open legal questions** in `mazidiperformance-web/LEGAL_CHECKLIST.md`. Only #3 (does
+  consent withdrawal require deleting historical records?) changes code.
+- The owner approved publishing the notice **without completed solicitor review** — recorded in
+  `LEGAL_CHECKLIST.md` under "Owner decision".
+- `docs/KNOWN_ISSUES.md` — M4–M8, L1–L12 open, none blocking.
 
-## Validation commands (from docs/BUILD_AND_TEST.md, .github/workflows/ci.yml, and session history)
+## Working practices that mattered
+
+- Run long `xcodebuild` steps as a **background job writing to a log**, then poll. Silent
+  multi-minute foreground builds tripped a watchdog repeatedly.
+- **Verify subagent claims independently.** Most reports were accurate; two were not. A
+  `git status`, grep or test re-run caught them.
+- Git identity is now `MazidiGroup <aimalmazid@gmail.com>`. Historical commits on `main` (87)
+  and `mazidi-platform/master` (17) still carry an old address — **deliberately not rewritten**,
+  since that would force-push shared history and invalidate merged PRs.
+
+## Verify before acting
 
 ```bash
-# Package tests
-cd Packages/MazidiKit && swift test
-
-# Clean dependency resolution check (pin must stay exactly 7.11.1)
-cd Packages/MazidiKit && rm -rf .build Package.resolved && swift package resolve
-
-# Project generation
-xcodegen generate
-
-# Debug build + full app/UI suite (add the CODE_SIGNING flags to mirror CI)
-xcodebuild -project MazidiPerformance.xcodeproj -scheme MazidiPerformance \
-  -destination 'platform=iOS Simulator,name=iPhone 17' \
-  CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO test
-
-# Release build
-xcodebuild -project MazidiPerformance.xcodeproj -scheme MazidiPerformance \
-  -configuration Release -destination 'generic/platform=iOS Simulator' \
-  CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
-
-# Manifest regeneration (after committing tracked-file changes)
-git ls-files | grep -vx "MANIFEST.sha256" | LC_ALL=C sort | while read -r f; do
-  printf '%s  ./%s\n' "$(git cat-file blob "HEAD:$f" | shasum -a 256 | cut -d' ' -f1)" "$f"
-done > MANIFEST.sha256
-
-# Hygiene checks
-git status --porcelain
-git ls-files | grep -iE "\.sqlite|\.xcresult|\.xcodeproj/|\.build/" || echo clean
+cd /Users/mazadi/mazidiperformance
+git status && git log --oneline -5
+gh pr list --repo MazidiGroup/mazidiperformance --state open
+cd Packages/MazidiKit && swift test          # expect 346 tests / 44 suites
+security find-identity -v -p codesigning     # need a JWAX6S948T line before archiving
+curl -s -o /dev/null -w "%{http_code}\n" https://mazidiperformance.mazidigroup.com/privacy
 ```
