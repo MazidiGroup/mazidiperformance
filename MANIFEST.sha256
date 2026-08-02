@@ -631,5 +631,8 @@ b9bcb311e3cd12bbdf15bf25257e4801069ae966c199009767ba6274d77ad17f  ./docs/archite
 02397f1dfa93d2085f078d12b5b9b4c598a9d354d71274777b331dfd54abd548  ./docs/architecture/adr/ADR-0014-local-device-identity.md
 85690702280ab28fd2097b0442c51606f55dbbccb1c038b388f5229727bd082f  ./docs/architecture/exercise-library-app-integration-review.md
 807a4fa7ef955ad34f61e94ae20b7827099add0b75b9ba5e571a4a23a307ad99  ./docs/audit/VERIFICATION_REPORT.md
+41454fd0cc704cd17c0e6a585a860efd194271d07e77dbde07266eca25fd078c  ./docs/compliance/DPIA.md
+1358d8c3d86a5b93c952c7878557b04271bddfa5ef7d4492e355392acb85a31b  ./docs/compliance/PHASE0.md
+710b4181193742bfe93e561133ba661eaffae65c95efc34db0ea155bfbde32e9  ./docs/compliance/solicitor-brief.md
 3f2454fef09bd840084a646a8caa928fdb2439a55c7585129edcfe6f34806ef2  ./docs/session-handoffs/CURRENT_SESSION_HANDOFF.md
 24d89fdc26623969f739a1eddac8827f89901678ea837ef591e09ceae5774597  ./project.yml
