@@ -43,6 +43,11 @@ targets:
         # App icon lives in App/Resources/Assets.xcassets (single 1024×1024 source;
         # Xcode derives every other size). Required for App Store submission.
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # Must be set on the target, not in the project-level `settings.base`: XcodeGen
+        # writes its own "1,2" default onto every iOS application target, which silently
+        # overrides the project-level value. Verify with
+        # `grep TARGETED_DEVICE_FAMILY MazidiPerformance.xcodeproj/project.pbxproj`.
+        TARGETED_DEVICE_FAMILY: "1"
       configs:
         # LOCAL_IDENTITY gates the device-local test profile (ADR-0014) — the only way to
         # open the app while no authentication backend exists (R-01). It is set for Debug
@@ -80,6 +85,12 @@ targets:
       properties:
         UILaunchScreen: {}
         CFBundleDisplayName: Mazidi Performance
+        # Portrait only. Every approved panel is portrait iPhone (402x874 pt) and no
+        # handoff document specifies landscape behaviour, so claiming landscape would
+        # ship an undesigned layout. App Store Connect additionally rejects a bundle
+        # that declares no orientations at all.
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
         # Bound to the build settings above so the version is declared in one place.
         # Without these, XcodeGen writes its own defaults (1.0 / 1) and silently
         # ignores MARKETING_VERSION / CURRENT_PROJECT_VERSION.
