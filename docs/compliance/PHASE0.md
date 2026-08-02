@@ -2,7 +2,7 @@
 
 **Opened:** 2 August 2026
 **Governing decision:** ADR-0013 (backend provider selection), "Phase 0 integration gates"
-**Status:** all four gates OPEN. No integration work may begin.
+**Status:** gate 3 CLOSED (2 Aug 2026). Gates 1, 2 and 4 OPEN. No integration work may begin.
 
 > **ADR-0013 is not on `main`.** It lives on the unmerged branch
 > `feature/backend-provider-decision` together with `backend-provider-evaluation.md` and
@@ -20,7 +20,7 @@ stay empty.
 |---|---|---|---|---|
 | 1 | DPA executed, UK Addendum verified **in the document body** | Owner | Verification checklist only — execution is a signature | OPEN |
 | 2 | DPIA completed | Owner signs; drafted here | **Yes — draft at [DPIA.md](DPIA.md)** | OPEN — draft ready for review |
-| 3 | ICO registration + data protection fee paid | Owner | Application details assembled below | OPEN |
+| 3 | ICO registration + data protection fee paid | Owner | — | **CLOSED 2 Aug 2026** |
 | 4 | Solicitor confirmation of the Art. 9(2)(a) basis + the retention question | Solicitor | **Yes — brief at [solicitor-brief.md](solicitor-brief.md)** | OPEN — brief ready to send |
 
 Gates 2 and 4 are the ones with drafted material. Gates 1 and 3 are transactions only the
@@ -28,20 +28,21 @@ owner can perform — this file records exactly what each needs so neither stall
 
 ## Sequencing
 
-Gate 4 should go out **first**. It is the longest lead time, and its answer to the retention
-question changes the DPIA's risk assessment and the withdrawal path's behaviour on existing
-data. Sending the solicitor brief before the DPIA is finalised avoids drafting the retention
-section twice.
+Gate 3 is **closed**. Of the three remaining, gate 4 should go out **first**: it has the longest
+lead time, and its answer to the retention question changes both the DPIA's risk assessment and
+the withdrawal path's behaviour on existing data. Sending the solicitor brief before the DPIA is
+finalised avoids drafting the retention section twice.
 
-Gate 3 is independent and can be done today. Gate 1 depends on nothing but Supabase's
-contracting process. Gate 2 is the only one with a real dependency — on gate 4.
+Gate 1 depends on nothing but Supabase's contracting process and can run in parallel. Gate 2 is
+the only one with a real dependency — on gate 4.
 
 ```
 Gate 4 (solicitor)  ──────────────────┐
-Gate 3 (ICO)        ──┐               ├──> Gate 2 (DPIA finalised) ──> Phase 0 closed
-Gate 1 (DPA)        ──┘               │
+Gate 1 (DPA)        ──────────────────┼──> Gate 2 (DPIA finalised) ──> Phase 0 closed
                                       │
         retention answer ─────────────┘
+
+Gate 3 (ICO) ── CLOSED 2 Aug 2026
 ```
 
 ## Gate 1 — DPA with the UK Addendum
@@ -82,35 +83,44 @@ The draft is complete except for the retention section, which is deliberately le
 gate 4. **It requires owner review and sign-off** — it is a structured first draft prepared from
 the repository's own decisions and constraints, not a lawyer-approved instrument.
 
-## Gate 3 — ICO registration and fee
+## Gate 3 — ICO registration and fee — **CLOSED 2 August 2026**
 
-**This can be done today and blocks nothing else.** Legal checklist item 13 records it as an
-outstanding statutory obligation independent of the backend, and the published privacy notice
-already routes complaints to the ICO — being unregistered while doing so is the position to get
-out of first.
+Registration completed by the owner on 2 August 2026.
 
-Register at `ico.org.uk` → Data protection fee.
+**Registered entity** — verified against Companies House on 2 August 2026, no longer
+owner-declared:
 
-**Details the application asks for, as they currently stand:**
+| Field | Value |
+|---|---|
+| Legal entity | **MAZIDI HOMES LIMITED** |
+| Company number | 15350516 |
+| Status | Active — incorporated 14 December 2023 |
+| Registered office | Flat 55 Banstead Court, 60 Westway, London, England, W12 0QJ |
+| ICO registration number | **TO BE RECORDED — see below** |
 
-| Field | Value | Confidence |
-|---|---|---|
-| Legal entity | Mazidi Homes Limited | **Owner-declared, unverified** — legal checklist item 9 is OPEN |
-| Company number | 15350516 | Owner-declared |
-| Registered address | Flat 55 Banstead Court, 60 Westway, London, England, W12 0QJ | Owner-declared |
-| Turnover / staff | Determines the fee tier | Owner |
-| Processing special category data | **Yes** — health data, per ADR-0013 | Decided |
-| Public authority | No | — |
+**This also resolves legal checklist item 9 (controller identity).** Companies House lists three
+Mazidi companies; the other two (MAZIDI LTD 14394872, MAZIDIAN SOFTWARE CONSULTANCY LIMITED
+11596458) are dissolved, so Mazidi Homes Limited is the only active entity. The published notice
+already names it as controller (`app/privacy/page.tsx:67`) and correctly treats "MazidiGroup" as
+a **brand**, not a legal person — there is no company of that name and none should be implied.
 
-**Resolve legal checklist item 9 before submitting.** Registering the wrong legal person is
-worse than registering late: every right on the published pages, and the ICO complaint route
-itself, depends on naming the correct controller. That item is owner-answerable and has been
-open since 30 July.
+### Two follow-ups this creates
 
-Expected fee tier for a micro-organisation is the lowest band, but the tier follows turnover and
-headcount — do not assume it.
+1. **Record the ICO registration number here and in the privacy notice.** The notice routes
+   complaints to the ICO, so the registration should be visible. It is not yet captured in this
+   file — the number was not supplied when the gate closed.
+2. **SIC code mismatch — not a blocker, worth correcting.** The company's only SIC code is
+   **98000, "Residents property management"**. A company may lawfully trade in any activity its
+   articles permit, so this does not affect the registration or the right to operate the app. But
+   a property-management company operating a health-data fitness service is an inconsistency on
+   the public record that invites questions from a solicitor, an insurer, or the ICO. Add an
+   appropriate software or fitness SIC at the next confirmation statement.
 
-**Record the registration number here once issued.** It belongs in the privacy notice.
+### Ship the notice changes together
+
+Two separate changes to the published notice are now pending: the ICO registration number, and
+the item 14 correction for the shipped consent flow (see "Live issue" below). They touch the same
+document and should go out in one release rather than two.
 
 ## Gate 4 — solicitor confirmation
 
