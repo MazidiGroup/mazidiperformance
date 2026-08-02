@@ -96,7 +96,7 @@ owner-declared:
 | Company number | 15350516 |
 | Status | Active — incorporated 14 December 2023 |
 | Registered office | Flat 55 Banstead Court, 60 Westway, London, England, W12 0QJ |
-| ICO registration number | **TO BE RECORDED — see below** |
+| ICO reference | **C1996539** (owner-supplied 2 Aug 2026 as the *application* number — see note) |
 
 **This also resolves legal checklist item 9 (controller identity).** Companies House lists three
 Mazidi companies; the other two (MAZIDI LTD 14394872, MAZIDIAN SOFTWARE CONSULTANCY LIMITED
@@ -106,9 +106,18 @@ a **brand**, not a legal person — there is no company of that name and none sh
 
 ### Two follow-ups this creates
 
-1. **Record the ICO registration number here and in the privacy notice.** The notice routes
-   complaints to the ICO, so the registration should be visible. It is not yet captured in this
-   file — the number was not supplied when the gate closed.
+1. **Confirm `C1996539` is the registration reference before it is published.** It was supplied
+   as the *application* number. The ICO's own guidance states a registration reference "begins
+   with Z, A or C", so the format is consistent with a registration reference and this is
+   probably it — but the ICO does distinguish an application reference from a registration
+   reference, and the two are not always the same on a new registration.
+
+   Verify against the registration certificate or the public register before the number goes
+   into the privacy notice: [Register of fee payers and certificate
+   downloads](https://ico.org.uk/about-the-ico/what-we-do/register-of-fee-payers/). Searching
+   the register for "Mazidi Homes" also confirms the entry is live, which a published notice
+   implicitly asserts. Publishing the wrong reference in a legal document is a worse error than
+   publishing it a week later.
 2. **SIC code mismatch — not a blocker, worth correcting.** The company's only SIC code is
    **98000, "Residents property management"**. A company may lawfully trade in any activity its
    articles permit, so this does not affect the registration or the right to operate the app. But
